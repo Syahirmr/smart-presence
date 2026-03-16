@@ -1,0 +1,226 @@
+
+
+# **Product Requirements Document (PRD)**
+
+## **Face Recognition With Attendance System**
+
+---
+
+## **1. Product Name**
+
+**Face Recognition With Attendance System**
+
+---
+
+## **2. Overview**
+
+Face Recognition With Attendance System is a **web-based, offline-capable application** that allows users to **register their face** and later **mark attendance using face recognition**.
+All processing happens **client-side** without any backend or server dependency. Attendance records are stored locally on the user’s device.
+
+---
+
+## **3. Goals & Objectives**
+
+* Enable **face registration** directly from the browser
+* Allow users to **mark attendance using face recognition**
+* Ensure the app works **100% offline**
+* Provide a **simple and clean UI** for easy usage
+* Store attendance data locally and display it inside the app
+
+---
+
+## **4. Target Users**
+
+* Schools / Colleges (small-scale)
+* Training centers
+* Office teams (local use)
+* Personal attendance tracking
+
+---
+
+## **5. Platform**
+
+* **Web Application**
+* Runs in modern browsers (Chrome, Edge, Firefox)
+* Supports desktop and mobile browsers with camera access
+
+---
+
+## **6. App Type**
+
+* **Offline-first Web App**
+* No backend / no server
+* No user authentication system
+
+---
+
+## **7. Tech Stack**
+
+### **Frontend**
+
+* **React JS** – Component-based UI
+* **Tailwind CSS** – Styling and responsive layout
+* **Framer Motion** – Animations and transitions
+
+### **Face Recognition**
+
+* Browser-based face detection & recognition (e.g. Web APIs / JS face recognition libraries)
+
+### **Storage**
+
+* **LocalStorage / IndexedDB**
+
+  * Store face embeddings
+  * Store attendance records
+
+---
+
+## **8. Core Features**
+
+### **8.1 Face Registration**
+
+**Description:**
+Users can register their face using the device camera.
+
+**Flow:**
+
+1. User opens “Register Face” page
+2. Camera permission requested
+3. User enters:
+
+   * Name
+   * ID / Roll Number (optional)
+4. Face is captured
+5. Face data is processed and stored locally
+6. Success confirmation shown
+
+**Acceptance Criteria:**
+
+* Camera must be accessible
+* Only one face should be detected
+* Face data saved locally
+* Duplicate registration should be warned
+
+---
+
+### **8.2 Attendance Marking**
+
+**Description:**
+Users can mark attendance by scanning their face.
+
+**Flow:**
+
+1. User opens “Take Attendance” page
+2. Camera starts automatically
+3. Face is detected and matched
+4. If matched:
+
+   * Attendance marked
+   * Date & time recorded
+5. If not matched:
+
+   * Show “Face not recognized” message
+
+**Acceptance Criteria:**
+
+* Attendance marked only once per day per user
+* Match confidence threshold applied
+* Clear success/failure feedback
+
+---
+
+### **8.3 Attendance Records**
+
+**Description:**
+View attendance history inside the app.
+
+**Features:**
+
+* List view of attendance
+* Filter by:
+
+  * Date
+  * Name / ID
+* Summary (Total days present)
+
+---
+
+### **8.4 Local Data Management**
+
+**Description:**
+All data remains on the user’s device.
+
+**Capabilities:**
+
+* Export attendance data (CSV)
+* Clear all stored data (reset system)
+
+---
+
+## **9. Non-Functional Requirements**
+
+* Works completely **offline**
+* Fast face detection (<1 second ideally)
+* Mobile-friendly UI
+* No external API dependency
+* Data privacy: no data leaves device
+
+---
+
+## **10. UI / UX Requirements**
+
+* Minimal & clean layout
+* Smooth transitions using Framer Motion
+* Clear camera preview area
+* Status indicators:
+
+  * Camera ready
+  * Face detected
+  * Attendance success/failure
+
+---
+
+## **11. Pages / Screens**
+
+1. **Home Dashboard**
+
+   * Register Face
+   * Take Attendance
+   * View Records
+
+2. **Register Face Page**
+
+   * Camera preview
+   * Input fields
+   * Capture button
+
+3. **Attendance Page**
+
+   * Live camera
+   * Recognition status
+
+4. **Attendance Records Page**
+
+   * Table / list
+   * Export option
+
+---
+
+## **12. Constraints & Limitations**
+
+* No cloud sync
+* Data loss possible if browser storage is cleared
+* Accuracy depends on lighting & camera quality
+* Works best with single-user device scenario
+
+---
+
+## **13. Future Enhancements (Optional)**
+
+* Multi-device sync (when backend is added)
+* Face re-registration
+* Admin mode
+* PWA support
+* Role-based access
+
+
