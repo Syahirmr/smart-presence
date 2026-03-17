@@ -14,8 +14,10 @@ type EnsureDefaultAdminInput = {
 };
 
 let findAdminByUsernameStmt: Database.Statement | null = null;
+let findAdminByIdStmt: Database.Statement | null = null;
 let countAdminsStmt: Database.Statement | null = null;
 let insertAdminStmt: Database.Statement | null = null;
+let updateAdminPasswordHashStmt: Database.Statement | null = null;
 let ensureDefaultAdminTx:
   | ((input: EnsureDefaultAdminInput) => { created: boolean; username: string })
   | null = null;
@@ -23,8 +25,10 @@ let ensureDefaultAdminTx:
 export function initAdminAuthStatements() {
   if (
     findAdminByUsernameStmt &&
+    findAdminByIdStmt &&
     countAdminsStmt &&
     insertAdminStmt &&
+    updateAdminPasswordHashStmt &&
     ensureDefaultAdminTx
   ) {
     return;
@@ -37,6 +41,13 @@ export function initAdminAuthStatements() {
     LIMIT 1
   `);
 
+  findAdminByIdStmt = db.prepare(`
+    SELECT id, username, password_hash, created_at
+    FROM admins
+    WHERE id = ?
+    LIMIT 1
+  `);
+
   countAdminsStmt = db.prepare(`
     SELECT COUNT(*) AS total
     FROM admins
@@ -45,6 +56,12 @@ export function initAdminAuthStatements() {
   insertAdminStmt = db.prepare(`
     INSERT INTO admins (username, password_hash)
     VALUES (?, ?)
+  `);
+
+  updateAdminPasswordHashStmt = db.prepare(`
+    UPDATE admins
+    SET password_hash = ?
+    WHERE id = ?
   `);
 
   ensureDefaultAdminTx = db.transaction((input: EnsureDefaultAdminInput) => {
@@ -71,7 +88,12 @@ export function initAdminAuthStatements() {
 }
 
 function assertAdminAuthStatementsReady() {
-  if (!findAdminByUsernameStmt || !ensureDefaultAdminTx) {
+  if (
+    !findAdminByUsernameStmt ||
+    !findAdminByIdStmt ||
+    !updateAdminPasswordHashStmt ||
+    !ensureDefaultAdminTx
+  ) {
     throw new Error('Admin auth statements are not initialized');
   }
 }
@@ -79,6 +101,21 @@ function assertAdminAuthStatementsReady() {
 export function findAdminByUsername(username: string): AdminRow | undefined {
   assertAdminAuthStatementsReady();
   return findAdminByUsernameStmt!.get(username) as AdminRow | undefined;
+}
+
+export function findAdminById(adminId: number): AdminRow | undefined {
+  assertAdminAuthStatementsReady();
+  return findAdminByIdStmt!.get(adminId) as AdminRow | undefined;
+}
+
+export function updateAdminPasswordHash(adminId: number, newPasswordHash: string) {
+  assertAdminAuthStatementsReady();
+
+  const result = updateAdminPasswordHashStmt!.run(newPasswordHash, adminId);
+
+  return {
+    updated: result.changes > 0,
+  };
 }
 
 export function ensureDefaultAdmin(input: EnsureDefaultAdminInput) {

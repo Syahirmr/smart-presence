@@ -24,7 +24,7 @@ async function bootstrap() {
 
     const seededAdmin = await seedDefaultAdmin({
       username: 'admin',
-      password: 'admin123456',
+      password: env.DEFAULT_ADMIN_PASSWORD,
     });
 
     logger.info({ dbPath: getDbPath() }, 'SQLite is ready');
