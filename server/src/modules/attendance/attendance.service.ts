@@ -1,3 +1,4 @@
+import { getSocketInstance } from '../../sockets/index.js';
 import {
   getAllUserEmbeddings,
   hasRecentAttendance,
@@ -19,7 +20,6 @@ function cosineSimilarity(vecA: number[], vecB: number[]): number {
     const a = vecA[i];
     const b = vecB[i];
 
-    // TS Guard: Mastiin elemennya ga undefined gara-gara noUncheckedIndexedAccess
     if (a === undefined || b === undefined) {
       continue;
     }
@@ -34,7 +34,6 @@ function cosineSimilarity(vecA: number[], vecB: number[]): number {
 }
 
 export function processAttendance(input: AttendanceBody) {
-  // 3. Fix: kiosk_id di-trim biar aman
   const kioskId = input.kiosk_id.trim();
   const faces = input.faces;
 
@@ -56,8 +55,7 @@ export function processAttendance(input: AttendanceBody) {
         embeddings: [],
       });
     }
-    
-    // 4. Fix: Guard buat JSON.parse biar ga jebol kalau ada 1 row rusak
+
     try {
       const parsedEmbedding = JSON.parse(row.embedding_data) as number[];
       if (Array.isArray(parsedEmbedding)) {
@@ -72,8 +70,6 @@ export function processAttendance(input: AttendanceBody) {
   const thresholdTimeIso = cooldownThreshold.toISOString();
 
   const results = [];
-  
-  // 2. Fix: Track duplicate user dalam 1 request yang sama (biar ga double insert)
   const acceptedUserIdsInRequest = new Set<string>();
 
   for (const face of faces) {
@@ -82,8 +78,6 @@ export function processAttendance(input: AttendanceBody) {
 
     for (const [userId, userData] of userEmbeddingsMap.entries()) {
       for (const dbEmbedding of userData.embeddings) {
-        
-        // 1. Fix: Handle dimension mismatch (cegah error beda panjang array)
         if (face.embedding.length !== dbEmbedding.length) {
           continue;
         }
@@ -109,7 +103,6 @@ export function processAttendance(input: AttendanceBody) {
       continue;
     }
 
-    // Cek Duplicate Level 1: Apakah user ini udah lolos di wajah sebelumnya dalam request ini?
     if (acceptedUserIdsInRequest.has(bestMatchUser.id)) {
       results.push({
         status: 'DUPLICATE',
@@ -119,7 +112,6 @@ export function processAttendance(input: AttendanceBody) {
       continue;
     }
 
-    // Cek Duplicate Level 2: Cek ke Database (Cooldown 60 menit)
     const isDuplicateDb = hasRecentAttendance(bestMatchUser.id, thresholdTimeIso);
 
     if (isDuplicateDb) {
@@ -131,21 +123,32 @@ export function processAttendance(input: AttendanceBody) {
       continue;
     }
 
+    const confidenceScore = Number(bestScore.toFixed(4));
+
     insertAttendanceLog({
       userId: bestMatchUser.id,
       waktuHadir: nowIso,
-      confidenceScore: Number(bestScore.toFixed(4)),
+      confidenceScore,
       status: 'HADIR',
-      kioskId: kioskId, 
+      kioskId,
     });
 
-    // Tandain user ini udah berhasil absen di request ini
     acceptedUserIdsInRequest.add(bestMatchUser.id);
+
+    const io = getSocketInstance();
+    if (io) {
+      io.emit('new_attendance', {
+        kiosk_id: kioskId,
+        waktu_hadir: nowIso,
+        confidence_score: confidenceScore,
+        user: bestMatchUser,
+      });
+    }
 
     results.push({
       status: 'HADIR',
       user: bestMatchUser,
-      confidence_score: Number(bestScore.toFixed(4)),
+      confidence_score: confidenceScore,
     });
   }
 

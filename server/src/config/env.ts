@@ -7,6 +7,7 @@ const envSchema = z.object({
   CORS_ORIGIN: z.string().min(1).default('http://localhost:5173'),
   DB_PATH: z.string().min(1).default('data/smart-presence.db'),
   HOST: z.string().min(1).default('0.0.0.0'),
+  JWT_SECRET: z.string().min(16),
 });
 
 const parsed = envSchema.safeParse(process.env);

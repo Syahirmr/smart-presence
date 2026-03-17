@@ -5,22 +5,40 @@ import { env } from './config/env.js';
 import { runMigrations } from './db/migrate.js';
 import { db, getDbPath } from './db/sqlite.js';
 import { logger } from './lib/logger.js';
+import { initAdminAuthStatements } from './modules/admin-auth/admin-auth.repository.js';
+import { seedDefaultAdmin } from './modules/admin-auth/admin-auth.service.js';
+import { initAttendanceStatements } from './modules/attendance/attendance.repository.js';
 import { initEnrollmentStatements } from './modules/enrollment/enrollment.repository.js';
-import { initAttendanceStatements } from './modules/attendance/attendance.repository.js'; // ➕ TAMBAHAN 1
+import { initSocket } from './sockets/index.js';
 
 const HOST = env.HOST;
 
-try {
-  runMigrations();
-  initEnrollmentStatements();
-  initAttendanceStatements(); // ➕ TAMBAHAN 2
-  logger.info({ dbPath: getDbPath() }, 'SQLite is ready');
-} catch (error) {
-  logger.error({ err: error }, 'Failed to initialize database');
-  process.exit(1);
+async function bootstrap() {
+  try {
+    runMigrations();
+    initEnrollmentStatements();
+    initAttendanceStatements();
+    initAdminAuthStatements();
+
+    const seededAdmin = await seedDefaultAdmin({
+      username: 'admin',
+      password: 'admin123456',
+    });
+
+    logger.info({ dbPath: getDbPath() }, 'SQLite is ready');
+    logger.info(
+      { created: seededAdmin.created, username: seededAdmin.username },
+      seededAdmin.created ? 'Default admin seeded' : 'Default admin already exists',
+    );
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to initialize database');
+    process.exit(1);
+  }
 }
 
 const server = http.createServer(app);
+
+initSocket(server);
 
 server.on('error', (error: NodeJS.ErrnoException) => {
   if (error.code === 'EADDRINUSE') {
@@ -37,6 +55,8 @@ server.on('error', (error: NodeJS.ErrnoException) => {
 
   process.exit(1);
 });
+
+await bootstrap();
 
 server.listen(env.PORT, HOST, () => {
   const address = server.address() as AddressInfo | null;
