@@ -1,15 +1,12 @@
 import type { Request, Response } from 'express';
 import { sendSuccess } from '../../lib/api-response.js';
+import { adminAttendanceQuerySchema } from './admin-attendance.schema.js';
 import { getAdminAttendanceLogs } from './admin-attendance.service.js';
 
 export function getAdminAttendanceLogsController(req: Request, res: Response) {
-  const limitParam = req.query.limit;
-  const limit =
-    typeof limitParam === 'string' && limitParam.trim() !== ''
-      ? Number(limitParam)
-      : undefined;
+  const query = adminAttendanceQuerySchema.parse(req.query);
 
-  const logs = getAdminAttendanceLogs({ limit });
+  const logs = getAdminAttendanceLogs(query);
 
   return sendSuccess(res, {
     statusCode: 200,
