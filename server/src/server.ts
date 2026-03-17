@@ -5,6 +5,7 @@ import { env } from './config/env.js';
 import { runMigrations } from './db/migrate.js';
 import { db, getDbPath } from './db/sqlite.js';
 import { logger } from './lib/logger.js';
+import { initAdminAttendanceStatements } from './modules/admin-attendance/admin-attendance.repository.js';
 import { initAdminAuthStatements } from './modules/admin-auth/admin-auth.repository.js';
 import { seedDefaultAdmin } from './modules/admin-auth/admin-auth.service.js';
 import { initAttendanceStatements } from './modules/attendance/attendance.repository.js';
@@ -19,6 +20,7 @@ async function bootstrap() {
     initEnrollmentStatements();
     initAttendanceStatements();
     initAdminAuthStatements();
+    initAdminAttendanceStatements();
 
     const seededAdmin = await seedDefaultAdmin({
       username: 'admin',
