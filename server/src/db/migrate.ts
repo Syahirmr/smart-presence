@@ -24,9 +24,9 @@ export function runMigrations() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id TEXT NOT NULL,
         waktu_hadir TEXT NOT NULL, 
-        confidence_score REAL, 
+        confidence_score REAL NOT NULL,
         status TEXT NOT NULL,
-        source_device TEXT,
+        kiosk_id TEXT NOT NULL, -- 🔥 FIXED: Udah sinkron sama payload Kiosk
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
@@ -38,9 +38,11 @@ export function runMigrations() {
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
 
+      -- Indexing standar
       CREATE INDEX IF NOT EXISTS idx_face_embeddings_user_id ON face_embeddings(user_id);
-      CREATE INDEX IF NOT EXISTS idx_attendance_logs_user_id ON attendance_logs(user_id);
-      CREATE INDEX IF NOT EXISTS idx_attendance_logs_waktu_hadir ON attendance_logs(waktu_hadir);
+      
+      -- 🔥 FIXED: Composite index maut buat optimasi query Anti-Dobel 60 menit
+      CREATE INDEX IF NOT EXISTS idx_attendance_logs_cooldown ON attendance_logs(user_id, waktu_hadir DESC);
     `);
 
     logger.info('SQLite migrations completed');

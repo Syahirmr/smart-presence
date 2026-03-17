@@ -5,13 +5,15 @@ import { env } from './config/env.js';
 import { runMigrations } from './db/migrate.js';
 import { db, getDbPath } from './db/sqlite.js';
 import { logger } from './lib/logger.js';
-import { initEnrollmentStatements } from './modules/enrollment/enrollment.repository.js'; // <-- TAMBAH INI
+import { initEnrollmentStatements } from './modules/enrollment/enrollment.repository.js';
+import { initAttendanceStatements } from './modules/attendance/attendance.repository.js'; // ➕ TAMBAHAN 1
 
 const HOST = env.HOST;
 
 try {
   runMigrations();
-  initEnrollmentStatements(); // <-- PANGGIL DI SINI
+  initEnrollmentStatements();
+  initAttendanceStatements(); // ➕ TAMBAHAN 2
   logger.info({ dbPath: getDbPath() }, 'SQLite is ready');
 } catch (error) {
   logger.error({ err: error }, 'Failed to initialize database');
