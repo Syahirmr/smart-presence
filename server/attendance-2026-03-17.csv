@@ -1,0 +1,2 @@
+id,user_id,nim_nip,nama_lengkap,kiosk_id,waktu_hadir,confidence_score,status,created_at
+"1","usr-273572c4-98bf-462a-9573-291bdadd3c88","22111002","Syahir Mohamad Ramdhan","laptop-depan-1","2026-03-17T07:36:04.900Z","1","HADIR","2026-03-17T07:36:04Z"
