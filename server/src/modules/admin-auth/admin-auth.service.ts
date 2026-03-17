@@ -66,6 +66,11 @@ export async function loginAdmin(input: AdminLoginBody) {
     },
   );
 
+    const mustChangePassword = await bcrypt.compare(
+    env.DEFAULT_ADMIN_PASSWORD,
+    admin.password_hash,
+  );
+
   return {
     token,
     token_type: 'Bearer',
@@ -73,6 +78,7 @@ export async function loginAdmin(input: AdminLoginBody) {
       id: admin.id,
       username: admin.username,
     },
+    must_change_password: mustChangePassword,
   };
 }
 
