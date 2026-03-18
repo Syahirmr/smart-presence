@@ -1,31 +1,90 @@
 import { useState, useEffect } from 'react';
 import { Download, Trash2, Search, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getAttendance, clearAllData, exportToCSV, type AttendanceRecord } from '../utils/storage';
+
+// Sesuaikan interface dengan balasan dari Backend SQLite kita
+interface AttendanceRecord {
+    id: string;
+    timestamp: string; // Aslinya waktu_hadir
+    date: string;      // Untuk filter tanggal
+    name: string;      // Aslinya user.nama_lengkap
+    nim_nip: string;   // Aslinya user.nim_nip
+    status: string;    // HADIR / DUPLICATE
+    score: number;
+}
 
 const Records = () => {
     const [records, setRecords] = useState<AttendanceRecord[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [filterDate, setFilterDate] = useState('');
+    const [isLoading, setIsLoading] = useState(true);
 
+    // Saat komponen dimuat, ambil data dari Backend
     useEffect(() => {
-        setRecords(getAttendance().reverse());
+        fetchRecordsFromBackend();
     }, []);
 
+    const fetchRecordsFromBackend = async () => {
+        setIsLoading(true);
+        try {
+            // Tembak ke API admin (Asumsi route: /api/admin/attendance)
+            // Kalau misal error 404 nanti, berarti URL backendnya perlu kita sesuaikan dikit
+            const response = await fetch('http://localhost:3001/api/admin/attendance');
+            const rawResult = await response.json();
+            
+            // Bongkar paket data backend
+            let dataArray = [];
+            if (Array.isArray(rawResult)) dataArray = rawResult;
+            else if (rawResult?.data) dataArray = Array.isArray(rawResult.data) ? rawResult.data : rawResult.data.results || [];
+            
+            // Format data biar cocok sama tabel UI-mu yang keren ini
+            const formattedRecords: AttendanceRecord[] = dataArray.map((log: any) => {
+                const dateObj = new Date(log.waktu_hadir);
+                return {
+                    id: log.id,
+                    timestamp: log.waktu_hadir,
+                    date: dateObj.toISOString().split('T')[0], // Format YYYY-MM-DD buat filter
+                    name: log.user?.nama_lengkap || 'Unknown',
+                    nim_nip: log.user?.nim_nip || '-',
+                    status: log.status,
+                    score: log.confidence_score
+                };
+            });
+
+            // Urutkan dari yang terbaru
+            setRecords(formattedRecords.reverse());
+        } catch (error) {
+            console.error("Gagal mengambil data dari database:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const handleClearData = () => {
-        if (window.confirm('Apakah Anda yakin ingin menghapus semua data absensi dan pendaftaran? Tindakan ini tidak dapat dibatalkan.')) {
-            clearAllData();
+        if (window.confirm('Hapus dari tampilan? (Catatan asli tetap aman di database SQLite)')) {
             setRecords([]);
         }
     };
 
     const handleExport = () => {
-        exportToCSV(records, `attendance_report_${new Date().toISOString().split('T')[0]}.csv`);
+        if (records.length === 0) return alert("Tidak ada data untuk diekspor.");
+        const headers = ['NIM/NIP', 'Nama', 'Tanggal', 'Waktu', 'Status', 'Skor AI'];
+        const csvData = records.map(r => [
+            r.nim_nip, r.name, r.date, 
+            new Date(r.timestamp).toLocaleTimeString(), 
+            r.status, r.score
+        ].join(','));
+        const blob = new Blob([headers.join(',') + '\n' + csvData.join('\n')], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `attendance_report_${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
     };
 
     const filteredRecords = records.filter(record => {
         const matchesSearch = record.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            record.id.toLowerCase().includes(searchTerm.toLowerCase());
+            record.nim_nip.toLowerCase().includes(searchTerm.toLowerCase());
         const matchesDate = filterDate ? record.date === filterDate : true;
         return matchesSearch && matchesDate;
     });
@@ -35,10 +94,16 @@ const Records = () => {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-4xl font-bold gradient-text">Riwayat Absensi</h1>
-                    <p className="text-slate-400">Kelola dan lihat semua catatan absensi yang tersimpan secara lokal.</p>
+                    <p className="text-slate-400">Kelola dan lihat semua catatan absensi yang tersimpan di Database AI.</p>
                 </div>
 
                 <div className="flex items-center gap-3">
+                    <button
+                        onClick={fetchRecordsFromBackend}
+                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-sm font-semibold flex items-center gap-2 transition-all border border-slate-700"
+                    >
+                        🔄 Refresh
+                    </button>
                     <button
                         onClick={handleExport}
                         className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-xl text-sm font-semibold flex items-center gap-2 transition-all shadow-lg shadow-blue-500/20"
@@ -51,7 +116,7 @@ const Records = () => {
                         className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl text-sm font-semibold flex items-center gap-2 transition-all border border-red-500/20"
                     >
                         <Trash2 size={18} />
-                        Hapus Semua
+                        Bersihkan
                     </button>
                 </div>
             </div>
@@ -71,7 +136,7 @@ const Records = () => {
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                     placeholder="Nama atau ID"
-                                    className="w-full bg-slate-900/50 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-all"
+                                    className="w-full bg-slate-900/50 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-all text-white"
                                 />
                             </div>
 
@@ -83,7 +148,7 @@ const Records = () => {
                                     type="date"
                                     value={filterDate}
                                     onChange={(e) => setFilterDate(e.target.value)}
-                                    className="w-full bg-slate-900/50 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-all [color-scheme:dark]"
+                                    className="w-full bg-slate-900/50 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-all [color-scheme:dark] text-white"
                                 />
                             </div>
 
@@ -110,7 +175,7 @@ const Records = () => {
                                 <thead className="bg-white/5 text-slate-400 text-xs uppercase tracking-wider">
                                     <tr>
                                         <th className="px-6 py-4 font-semibold">Pengguna</th>
-                                        <th className="px-6 py-4 font-semibold">ID</th>
+                                        <th className="px-6 py-4 font-semibold">ID / NIM</th>
                                         <th className="px-6 py-4 font-semibold">Tanggal</th>
                                         <th className="px-6 py-4 font-semibold">Waktu</th>
                                         <th className="px-6 py-4 font-semibold text-right">Status</th>
@@ -118,9 +183,15 @@ const Records = () => {
                                 </thead>
                                 <tbody className="divide-y divide-white/5">
                                     <AnimatePresence mode="popLayout">
-                                        {filteredRecords.map((record, i) => (
+                                        {isLoading ? (
+                                            <tr>
+                                                <td colSpan={5} className="px-6 py-12 text-center text-blue-400 animate-pulse font-semibold">
+                                                    ⏳ Menyinkronkan dengan Database Server...
+                                                </td>
+                                            </tr>
+                                        ) : filteredRecords.map((record, i) => (
                                             <motion.tr
-                                                key={record.timestamp}
+                                                key={`${record.id}-${i}`}
                                                 initial={{ opacity: 0, y: 10 }}
                                                 animate={{ opacity: 1, y: 0 }}
                                                 exit={{ opacity: 0, scale: 0.95 }}
@@ -135,23 +206,27 @@ const Records = () => {
                                                         <span className="font-medium text-slate-200">{record.name}</span>
                                                     </div>
                                                 </td>
-                                                <td className="px-6 py-4 text-slate-400 text-sm">{record.id}</td>
+                                                <td className="px-6 py-4 text-slate-400 text-sm font-mono">{record.nim_nip}</td>
                                                 <td className="px-6 py-4 text-slate-400 text-sm">{record.date}</td>
-                                                <td className="px-6 py-4 text-slate-200 text-sm">
-                                                    {new Date(record.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                <td className="px-6 py-4 text-slate-200 text-sm font-mono">
+                                                    {new Date(record.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second:'2-digit' })}
                                                 </td>
                                                 <td className="px-6 py-4 text-right">
-                                                    <span className="px-2 py-1 bg-emerald-500/10 text-emerald-400 text-[10px] font-bold uppercase rounded-md border border-emerald-500/20">
-                                                        Hadir
+                                                    <span className={`px-2 py-1 text-[10px] font-bold uppercase rounded-md border ${
+                                                        record.status === 'HADIR' 
+                                                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                                                            : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                                    }`}>
+                                                        {record.status}
                                                     </span>
                                                 </td>
                                             </motion.tr>
                                         ))}
                                     </AnimatePresence>
-                                    {filteredRecords.length === 0 && (
+                                    {!isLoading && filteredRecords.length === 0 && (
                                         <tr>
                                             <td colSpan={5} className="px-6 py-12 text-center text-slate-500 italic">
-                                                Tidak ada data yang sesuai dengan kriteria pencarian.
+                                                Belum ada data absensi di Database.
                                             </td>
                                         </tr>
                                     )}

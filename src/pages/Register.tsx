@@ -1,183 +1,116 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { Camera, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { getFaceDescriptor } from '../utils/faceApi';
-import { saveRegistration } from '../utils/storage';
+import React, { useState } from 'react';
+import LivenessCamera from '../components/LivenessCamera';
+import { Camera, User, Hash, CheckCircle } from 'lucide-react';
 
-const Register = () => {
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const [name, setName] = useState('');
-    const [userId, setUserId] = useState('');
-    const [status, setStatus] = useState<'idle' | 'capturing' | 'success' | 'error'>('idle');
-    const [errorMessage, setErrorMessage] = useState('');
-    const [isCameraReady, setIsCameraReady] = useState(false);
+export default function Register() {
+  const [formData, setFormData] = useState({ nim_nip: '', nama_lengkap: '' });
+  const [isLivenessPassed, setIsLivenessPassed] = useState(false);
+  const [tempEmbeddings, setTempEmbeddings] = useState<number[][]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
-    useEffect(() => {
-        startCamera();
-        return () => stopCamera();
-    }, []);
+  // Fungsi ini nangkep data dari kamera, tapi JANGAN langsung fetch dulu
+  const handleCaptureSuccess = (embeddings: number[][]) => {
+    setTempEmbeddings(embeddings);
+    setIsLivenessPassed(true); // Biar border kamera jadi hijau & tombol aktif
+  };
 
-    const startCamera = async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-                setIsCameraReady(true);
-            }
-        } catch (err) {
-            console.error("Kesalahan Kamera:", err);
-            setStatus('error');
-            setErrorMessage('Gagal mengakses kamera. Pastikan izin kamera telah diberikan.');
-        }
-    };
+const handleFinalSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isLivenessPassed || !formData.nim_nip || isLoading) return;
 
-    const stopCamera = () => {
-        if (videoRef.current?.srcObject) {
-            const stream = videoRef.current.srcObject as MediaStream;
-            stream.getTracks().forEach(track => track.stop());
-        }
-    };
+    setIsLoading(true);
+    try {
+      // Kita langsung tembak Enroll. Kalau NIM duplikat, backend bakal kasih 409.
+      const response = await fetch('http://localhost:3001/api/enroll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nim_nip: formData.nim_nip,
+          nama_lengkap: formData.nama_lengkap,
+          embeddings: tempEmbeddings.slice(0, 3)
+        })
+      });
 
-    const handleRegister = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!name || !videoRef.current) return;
+      if (response.status === 409) {
+        // 👇 INI CARA HANDLE 409 CONFLICT 👇
+        alert(`⚠️ Gagal: NIM ${formData.nim_nip} sudah terdaftar di sistem!`);
+      } else if (response.ok) {
+        alert("✅ Pendaftaran Berhasil!");
+        window.location.reload(); 
+      } else {
+        const errText = await response.text();
+        alert("Terjadi kesalahan: " + errText);
+      }
+    } catch (err) {
+      alert("Server tidak merespon. Pastikan backend jalan!");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-        setStatus('capturing');
-        try {
-            const descriptor = await getFaceDescriptor(videoRef.current);
+  return (
+    <div className="min-h-screen bg-[#0B0E14] text-white flex flex-col items-center justify-center p-6">
+      <div className="text-center mb-10">
+        <h1 className="text-4xl font-bold text-[#4B6BFF] mb-2">Daftarkan Wajah</h1>
+        <p className="text-gray-400">Rekam wajah Anda untuk bergabung ke sistem absensi.</p>
+      </div>
 
-            if (!descriptor) {
-                throw new Error('Wajah tidak terdeteksi. Pastikan wajah Anda terlihat dengan jelas.');
-            }
-
-            saveRegistration({
-                id: userId || Date.now().toString(),
-                name,
-                descriptor: Array.from(descriptor)
-            });
-
-            setStatus('success');
-            setName('');
-            setUserId('');
-            setTimeout(() => setStatus('idle'), 3000);
-        } catch (err: any) {
-            setStatus('error');
-            setErrorMessage(err.message || 'Pendaftaran gagal.');
-            setTimeout(() => setStatus('idle'), 3000);
-        }
-    };
-
-    return (
-        <div className="max-w-2xl mx-auto space-y-8">
-            <div className="text-center space-y-2">
-                <h1 className="text-4xl font-bold gradient-text">Daftarkan Wajah</h1>
-                <p className="text-slate-400">Rekam wajah Anda untuk bergabung ke sistem absensi.</p>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 w-full max-w-5xl items-center">
+        
+        {/* SISI KIRI: KAMERA */}
+        <div className={`relative rounded-3xl overflow-hidden border-4 transition-all duration-500 ${isLivenessPassed ? 'border-green-500' : 'border-[#151921]'}`}>
+          <LivenessCamera 
+            onSuccess={handleCaptureSuccess} 
+            onCancel={() => window.location.reload()} 
+          />
+          {isLivenessPassed && (
+            <div className="absolute inset-0 bg-green-500/10 flex items-center justify-center">
+               <div className="bg-green-500 text-white p-3 rounded-full shadow-lg">
+                 <CheckCircle size={40} />
+               </div>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
-                <div className="space-y-4">
-                    <div className="relative aspect-video glass-card overflow-hidden bg-black group">
-                        <video
-                            ref={videoRef}
-                            autoPlay
-                            muted
-                            playsInline
-                            className="w-full h-full object-cover"
-                        />
-                        <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none" />
-
-                        {!isCameraReady && (
-                            <div className="absolute inset-0 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm">
-                                <RefreshCw className="animate-spin text-blue-400" size={32} />
-                            </div>
-                        )}
-
-                        <AnimatePresence>
-                            {status === 'capturing' && (
-                                <motion.div
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    className="absolute inset-0 bg-blue-500/20 backdrop-blur-[2px] flex items-center justify-center"
-                                >
-                                    <div className="text-white font-semibold flex items-center gap-2">
-                                        <RefreshCw className="animate-spin" size={20} />
-                                        Memproses...
-                                    </div>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-                    </div>
-
-                    <div className="text-xs text-slate-500 flex items-center gap-2 px-2">
-                        <div className={`w-2 h-2 rounded-full ${isCameraReady ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                        {isCameraReady ? 'Kamera Siap' : 'Kamera Tidak Terhubung'}
-                    </div>
-                </div>
-
-                <form onSubmit={handleRegister} className="glass-card p-6 space-y-6">
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium text-slate-400 mb-1">Nama Lengkap</label>
-                            <input
-                                type="text"
-                                required
-                                value={name}
-                                onChange={(e) => setName(e.target.value)}
-                                placeholder="John Doe"
-                                className="w-full bg-slate-900/50 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all placeholder:text-slate-600"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-400 mb-1">ID / Nomor Induk (Opsional)</label>
-                            <input
-                                type="text"
-                                value={userId}
-                                onChange={(e) => setUserId(e.target.value)}
-                                placeholder="EMP-123"
-                                className="w-full bg-slate-900/50 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all placeholder:text-slate-600"
-                            />
-                        </div>
-                    </div>
-
-                    <button
-                        type="submit"
-                        disabled={status === 'capturing' || !isCameraReady}
-                        className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed py-4 rounded-xl font-semibold shadow-lg shadow-blue-500/20 transition-all active:scale-95 flex items-center justify-center gap-2"
-                    >
-                        <Camera size={20} />
-                        Daftar Sekarang
-                    </button>
-
-                    <AnimatePresence>
-                        {status === 'success' && (
-                            <motion.div
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: 'auto' }}
-                                exit={{ opacity: 0, height: 0 }}
-                                className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 p-4 rounded-xl flex items-center gap-3"
-                            >
-                                <CheckCircle size={20} />
-                                <span className="text-sm">Pendaftaran berhasil! Data tersimpan secara lokal.</span>
-                            </motion.div>
-                        )}
-                        {status === 'error' && (
-                            <motion.div
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: 'auto' }}
-                                exit={{ opacity: 0, height: 0 }}
-                                className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl flex items-center gap-3"
-                            >
-                                <AlertCircle size={20} />
-                                <span className="text-sm">{errorMessage}</span>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-                </form>
-            </div>
+          )}
         </div>
-    );
-};
 
-export default Register;
+        {/* SISI KANAN: FORM (Sesuai Figma) */}
+        <div className="bg-[#151921] p-10 rounded-[32px] shadow-2xl border border-white/5">
+          <form onSubmit={handleFinalSubmit} className="space-y-6">
+            <div>
+              <label className="text-sm text-gray-400 mb-2 block ml-1">Nama Lengkap</label>
+              <input 
+                type="text"
+                className="w-full bg-[#0B0E14] border border-gray-700 rounded-2xl py-4 px-6 focus:border-[#4B6BFF] outline-none transition-all"
+                placeholder="John Doe"
+                value={formData.nama_lengkap}
+                onChange={(e) => setFormData({...formData, nama_lengkap: e.target.value})}
+              />
+            </div>
+
+            <div>
+              <label className="text-sm text-gray-400 mb-2 block ml-1">ID/Nomor Induk</label>
+              <input 
+                type="text"
+                className="w-full bg-[#0B0E14] border border-gray-700 rounded-2xl py-4 px-6 focus:border-[#4B6BFF] outline-none transition-all"
+                placeholder="EMP-123"
+                value={formData.nim_nip}
+                onChange={(e) => setFormData({...formData, nim_nip: e.target.value})}
+              />
+            </div>
+
+            <button 
+              type="submit"
+              disabled={!isLivenessPassed || isLoading}
+              className={`w-full py-5 rounded-2xl font-bold text-lg flex items-center justify-center gap-3 transition-all ${
+                isLivenessPassed && !isLoading
+                ? 'bg-[#4B6BFF] hover:bg-[#3A56D4] shadow-[0_0_20px_rgba(75,107,255,0.3)]' 
+                : 'bg-gray-800 text-gray-500 cursor-not-allowed'
+              }`}
+            >
+              {isLoading ? "Memproses..." : <><Camera size={22} /> Daftar Sekarang</>}
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
