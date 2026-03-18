@@ -1,168 +1,215 @@
-import { useState, useEffect } from 'react';
-import { Download, Trash2, Search, Calendar } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { getAttendance, clearAllData, exportToCSV, type AttendanceRecord } from '../utils/storage';
+import { useMemo, useState } from 'react';
+import { Calendar, Download, Search, Trash2 } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { clearAllData, exportToCSV, getAttendance, type AttendanceRecord } from '../utils/storage';
+
+const formatTime = (timestamp: string) => {
+  return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
 
 const Records = () => {
-    const [records, setRecords] = useState<AttendanceRecord[]>([]);
-    const [searchTerm, setSearchTerm] = useState('');
-    const [filterDate, setFilterDate] = useState('');
+  const [records, setRecords] = useState<AttendanceRecord[]>(() => {
+    // Lazy initializer menghindari setState di useEffect dan tetap aman untuk data lokal.
+    return [...getAttendance()].reverse();
+  });
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterDate, setFilterDate] = useState('');
 
-    useEffect(() => {
-        setRecords(getAttendance().reverse());
-    }, []);
+  const filteredRecords = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase();
 
-    const handleClearData = () => {
-        if (window.confirm('Apakah Anda yakin ingin menghapus semua data absensi dan pendaftaran? Tindakan ini tidak dapat dibatalkan.')) {
-            clearAllData();
-            setRecords([]);
-        }
-    };
+    return records.filter((record) => {
+      const matchesSearch =
+        record.name.toLowerCase().includes(normalizedSearch) || record.id.toLowerCase().includes(normalizedSearch);
+      const matchesDate = filterDate ? record.date === filterDate : true;
 
-    const handleExport = () => {
-        exportToCSV(records, `attendance_report_${new Date().toISOString().split('T')[0]}.csv`);
-    };
-
-    const filteredRecords = records.filter(record => {
-        const matchesSearch = record.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            record.id.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesDate = filterDate ? record.date === filterDate : true;
-        return matchesSearch && matchesDate;
+      return matchesSearch && matchesDate;
     });
+  }, [records, searchTerm, filterDate]);
 
-    return (
-        <div className="max-w-6xl mx-auto space-y-8">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                    <h1 className="text-4xl font-bold gradient-text">Riwayat Absensi</h1>
-                    <p className="text-slate-400">Kelola dan lihat semua catatan absensi yang tersimpan secara lokal.</p>
-                </div>
-
-                <div className="flex items-center gap-3">
-                    <button
-                        onClick={handleExport}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-xl text-sm font-semibold flex items-center gap-2 transition-all shadow-lg shadow-blue-500/20"
-                    >
-                        <Download size={18} />
-                        Ekspor CSV
-                    </button>
-                    <button
-                        onClick={handleClearData}
-                        className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl text-sm font-semibold flex items-center gap-2 transition-all border border-red-500/20"
-                    >
-                        <Trash2 size={18} />
-                        Hapus Semua
-                    </button>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div className="md:col-span-1 space-y-6">
-                    <div className="glass-card p-6 space-y-6">
-                        <h3 className="font-semibold text-slate-200">Filter</h3>
-
-                        <div className="space-y-4">
-                            <div className="space-y-2">
-                                <label className="text-xs font-medium text-slate-500 uppercase flex items-center gap-2">
-                                    <Search size={14} /> Cari
-                                </label>
-                                <input
-                                    type="text"
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                    placeholder="Nama atau ID"
-                                    className="w-full bg-slate-900/50 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-all"
-                                />
-                            </div>
-
-                            <div className="space-y-2">
-                                <label className="text-xs font-medium text-slate-500 uppercase flex items-center gap-2">
-                                    <Calendar size={14} /> Tanggal
-                                </label>
-                                <input
-                                    type="date"
-                                    value={filterDate}
-                                    onChange={(e) => setFilterDate(e.target.value)}
-                                    className="w-full bg-slate-900/50 border border-white/10 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-all [color-scheme:dark]"
-                                />
-                            </div>
-
-                            {records.length > 0 && (
-                                <div className="pt-4 border-t border-white/5 space-y-2">
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-slate-400">Total Catatan</span>
-                                        <span className="font-bold text-blue-400">{records.length}</span>
-                                    </div>
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-slate-400">Ditampilkan</span>
-                                        <span className="font-bold text-slate-200">{filteredRecords.length}</span>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-                <div className="md:col-span-3">
-                    <div className="glass-card overflow-hidden">
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left">
-                                <thead className="bg-white/5 text-slate-400 text-xs uppercase tracking-wider">
-                                    <tr>
-                                        <th className="px-6 py-4 font-semibold">Pengguna</th>
-                                        <th className="px-6 py-4 font-semibold">ID</th>
-                                        <th className="px-6 py-4 font-semibold">Tanggal</th>
-                                        <th className="px-6 py-4 font-semibold">Waktu</th>
-                                        <th className="px-6 py-4 font-semibold text-right">Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-white/5">
-                                    <AnimatePresence mode="popLayout">
-                                        {filteredRecords.map((record, i) => (
-                                            <motion.tr
-                                                key={record.timestamp}
-                                                initial={{ opacity: 0, y: 10 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                exit={{ opacity: 0, scale: 0.95 }}
-                                                transition={{ delay: Math.min(i * 0.05, 0.5) }}
-                                                className="hover:bg-white/[0.02] transition-colors"
-                                            >
-                                                <td className="px-6 py-4">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="w-8 h-8 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-400 font-bold text-xs">
-                                                            {record.name.charAt(0)}
-                                                        </div>
-                                                        <span className="font-medium text-slate-200">{record.name}</span>
-                                                    </div>
-                                                </td>
-                                                <td className="px-6 py-4 text-slate-400 text-sm">{record.id}</td>
-                                                <td className="px-6 py-4 text-slate-400 text-sm">{record.date}</td>
-                                                <td className="px-6 py-4 text-slate-200 text-sm">
-                                                    {new Date(record.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                </td>
-                                                <td className="px-6 py-4 text-right">
-                                                    <span className="px-2 py-1 bg-emerald-500/10 text-emerald-400 text-[10px] font-bold uppercase rounded-md border border-emerald-500/20">
-                                                        Hadir
-                                                    </span>
-                                                </td>
-                                            </motion.tr>
-                                        ))}
-                                    </AnimatePresence>
-                                    {filteredRecords.length === 0 && (
-                                        <tr>
-                                            <td colSpan={5} className="px-6 py-12 text-center text-slate-500 italic">
-                                                Tidak ada data yang sesuai dengan kriteria pencarian.
-                                            </td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+  const handleClearData = () => {
+    const confirmed = window.confirm(
+      'Apakah Anda yakin ingin menghapus semua data absensi dan pendaftaran? Tindakan ini tidak dapat dibatalkan.',
     );
+
+    if (!confirmed) return;
+
+    clearAllData();
+    setRecords([]);
+  };
+
+  const handleExport = () => {
+    exportToCSV(records, `attendance_report_${new Date().toISOString().split('T')[0]}.csv`);
+  };
+
+  return (
+    <div className="page-shell">
+      <header className="page-header md:flex-row md:items-end md:justify-between">
+        <div className="space-y-3">
+          <h1 className="page-title gradient-text">Riwayat Absensi</h1>
+          <p className="page-subtitle">
+            Kelola catatan absensi, cari data berdasarkan nama atau ID, lalu ekspor laporan saat dibutuhkan.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <button onClick={handleExport} className="btn-primary w-full sm:w-auto" disabled={!records.length}>
+            <Download size={18} />
+            Ekspor CSV
+          </button>
+          <button onClick={handleClearData} className="btn-danger w-full sm:w-auto" disabled={!records.length}>
+            <Trash2 size={18} />
+            Hapus Semua
+          </button>
+        </div>
+      </header>
+
+      <section className="grid grid-cols-1 gap-6 xl:grid-cols-[320px_1fr]">
+        <aside className="space-y-6">
+          <div className="glass-card panel-padding space-y-5">
+            <h2 className="section-title">Filter Data</h2>
+
+            <div className="space-y-2">
+              <label htmlFor="search-records" className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
+                <Search size={14} /> Cari
+              </label>
+              <input
+                id="search-records"
+                type="text"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Cari nama atau ID"
+                className="input-base"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="filter-date" className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
+                <Calendar size={14} /> Tanggal
+              </label>
+              <input
+                id="filter-date"
+                type="date"
+                value={filterDate}
+                onChange={(event) => setFilterDate(event.target.value)}
+                className="input-base [color-scheme:dark]"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-1">
+            <div className="glass-card panel-padding">
+              <p className="text-sm text-slate-400">Total Data</p>
+              <p className="mt-2 text-2xl font-bold text-slate-100">{records.length}</p>
+            </div>
+            <div className="glass-card panel-padding">
+              <p className="text-sm text-slate-400">Data Ditampilkan</p>
+              <p className="mt-2 text-2xl font-bold text-blue-300">{filteredRecords.length}</p>
+            </div>
+          </div>
+        </aside>
+
+        <section className="glass-card overflow-hidden">
+          {filteredRecords.length === 0 ? (
+            <div className="panel-padding">
+              <div className="rounded-2xl border border-dashed border-white/10 bg-slate-950/30 p-8 text-center">
+                <p className="text-lg font-semibold text-slate-200">Belum ada data yang cocok</p>
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  Coba ubah kata kunci pencarian atau pilih tanggal lain untuk melihat catatan absensi.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="grid gap-4 p-4 md:hidden">
+                <AnimatePresence>
+                  {filteredRecords.map((record, index) => (
+                    <motion.article
+                      key={`${record.timestamp}-${record.id}`}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      transition={{ delay: Math.min(index * 0.03, 0.2) }}
+                      className="rounded-2xl border border-white/10 bg-slate-950/35 p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-slate-100">{record.name}</p>
+                          <p className="mt-1 text-sm text-slate-400">ID: {record.id}</p>
+                        </div>
+                        <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-300">
+                          Hadir
+                        </span>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-2 gap-3 text-sm text-slate-400">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Tanggal</p>
+                          <p className="mt-1 text-slate-200">{record.date}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Waktu</p>
+                          <p className="mt-1 text-slate-200">{formatTime(record.timestamp)}</p>
+                        </div>
+                      </div>
+                    </motion.article>
+                  ))}
+                </AnimatePresence>
+              </div>
+
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full min-w-[720px] text-left">
+                  <thead className="bg-white/5 text-xs uppercase tracking-[0.24em] text-slate-500">
+                    <tr>
+                      <th className="px-6 py-4 font-semibold">Pengguna</th>
+                      <th className="px-6 py-4 font-semibold">ID</th>
+                      <th className="px-6 py-4 font-semibold">Tanggal</th>
+                      <th className="px-6 py-4 font-semibold">Waktu</th>
+                      <th className="px-6 py-4 text-right font-semibold">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    <AnimatePresence mode="popLayout">
+                      {filteredRecords.map((record, index) => (
+                        <motion.tr
+                          key={`${record.timestamp}-${record.id}`}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.98 }}
+                          transition={{ delay: Math.min(index * 0.02, 0.12) }}
+                          className="hover:bg-white/[0.02]"
+                        >
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-500/10 text-sm font-bold text-blue-300">
+                                {record.name.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <p className="font-medium text-slate-100">{record.name}</p>
+                                <p className="text-sm text-slate-500">Tercatat lokal</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-slate-400">{record.id}</td>
+                          <td className="px-6 py-4 text-sm text-slate-400">{record.date}</td>
+                          <td className="px-6 py-4 text-sm text-slate-200">{formatTime(record.timestamp)}</td>
+                          <td className="px-6 py-4 text-right">
+                            <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold text-emerald-300">
+                              Hadir
+                            </span>
+                          </td>
+                        </motion.tr>
+                      ))}
+                    </AnimatePresence>
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </section>
+      </section>
+    </div>
+  );
 };
 
 export default Records;

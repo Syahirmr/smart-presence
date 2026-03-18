@@ -1,183 +1,297 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { Camera, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { getFaceDescriptor } from '../utils/faceApi';
+import React, { useEffect, useRef, useState } from 'react';
+import { AlertCircle, Camera, CheckCircle, RefreshCw, ShieldCheck } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { getFaceDescriptor, loadModels } from '../utils/faceApi';
 import { saveRegistration } from '../utils/storage';
 
+type RegisterStatus = 'idle' | 'loading' | 'capturing' | 'success' | 'error';
+
+const sanitizeText = (value: string) => value.trim().replace(/\s+/g, ' ');
+
 const Register = () => {
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const [name, setName] = useState('');
-    const [userId, setUserId] = useState('');
-    const [status, setStatus] = useState<'idle' | 'capturing' | 'success' | 'error'>('idle');
-    const [errorMessage, setErrorMessage] = useState('');
-    const [isCameraReady, setIsCameraReady] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const resetTimerRef = useRef<number | null>(null);
 
-    useEffect(() => {
-        startCamera();
-        return () => stopCamera();
-    }, []);
+  const [name, setName] = useState('');
+  const [userId, setUserId] = useState('');
+  const [status, setStatus] = useState<RegisterStatus>('loading');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [isCameraReady, setIsCameraReady] = useState(false);
 
-    const startCamera = async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-                setIsCameraReady(true);
-            }
-        } catch (err) {
-            console.error("Kesalahan Kamera:", err);
-            setStatus('error');
-            setErrorMessage('Gagal mengakses kamera. Pastikan izin kamera telah diberikan.');
+  useEffect(() => {
+    let isMounted = true;
+
+    const initializePage = async () => {
+      try {
+        // Model AI dipanggil saat halaman dibuka agar initial load aplikasi tetap ringan.
+        await loadModels();
+        if (!isMounted) return;
+        await startCamera();
+        if (isMounted) {
+          setStatus('idle');
         }
+      } catch (error) {
+        if (!isMounted) return;
+        const message = error instanceof Error ? error.message : 'Gagal memuat kamera atau model wajah.';
+        setStatus('error');
+        setErrorMessage(message);
+      }
     };
 
-    const stopCamera = () => {
-        if (videoRef.current?.srcObject) {
-            const stream = videoRef.current.srcObject as MediaStream;
-            stream.getTracks().forEach(track => track.stop());
-        }
+    initializePage();
+
+    return () => {
+      isMounted = false;
+      stopCamera();
+      if (resetTimerRef.current) {
+        window.clearTimeout(resetTimerRef.current);
+      }
     };
+  }, []);
 
-    const handleRegister = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!name || !videoRef.current) return;
+  const startCamera = async () => {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: 'user',
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      },
+      audio: false,
+    });
 
-        setStatus('capturing');
-        try {
-            const descriptor = await getFaceDescriptor(videoRef.current);
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+      setIsCameraReady(true);
+    }
+  };
 
-            if (!descriptor) {
-                throw new Error('Wajah tidak terdeteksi. Pastikan wajah Anda terlihat dengan jelas.');
-            }
+  const stopCamera = () => {
+    if (videoRef.current?.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach((track) => track.stop());
+      videoRef.current.srcObject = null;
+    }
+  };
 
-            saveRegistration({
-                id: userId || Date.now().toString(),
-                name,
-                descriptor: Array.from(descriptor)
-            });
+  const scheduleReset = () => {
+    if (resetTimerRef.current) {
+      window.clearTimeout(resetTimerRef.current);
+    }
 
-            setStatus('success');
-            setName('');
-            setUserId('');
-            setTimeout(() => setStatus('idle'), 3000);
-        } catch (err: any) {
-            setStatus('error');
-            setErrorMessage(err.message || 'Pendaftaran gagal.');
-            setTimeout(() => setStatus('idle'), 3000);
-        }
-    };
+    resetTimerRef.current = window.setTimeout(() => {
+      setStatus('idle');
+      setErrorMessage('');
+    }, 3500);
+  };
 
-    return (
-        <div className="max-w-2xl mx-auto space-y-8">
-            <div className="text-center space-y-2">
-                <h1 className="text-4xl font-bold gradient-text">Daftarkan Wajah</h1>
-                <p className="text-slate-400">Rekam wajah Anda untuk bergabung ke sistem absensi.</p>
-            </div>
+  const handleRegister = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
-                <div className="space-y-4">
-                    <div className="relative aspect-video glass-card overflow-hidden bg-black group">
-                        <video
-                            ref={videoRef}
-                            autoPlay
-                            muted
-                            playsInline
-                            className="w-full h-full object-cover"
-                        />
-                        <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none" />
+    const cleanedName = sanitizeText(name);
+    const cleanedUserId = sanitizeText(userId);
 
-                        {!isCameraReady && (
-                            <div className="absolute inset-0 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm">
-                                <RefreshCw className="animate-spin text-blue-400" size={32} />
-                            </div>
-                        )}
+    if (!videoRef.current || !isCameraReady) {
+      setStatus('error');
+      setErrorMessage('Kamera belum siap. Tunggu beberapa saat lalu coba lagi.');
+      scheduleReset();
+      return;
+    }
 
-                        <AnimatePresence>
-                            {status === 'capturing' && (
-                                <motion.div
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    className="absolute inset-0 bg-blue-500/20 backdrop-blur-[2px] flex items-center justify-center"
-                                >
-                                    <div className="text-white font-semibold flex items-center gap-2">
-                                        <RefreshCw className="animate-spin" size={20} />
-                                        Memproses...
-                                    </div>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-                    </div>
+    if (cleanedName.length < 3) {
+      setStatus('error');
+      setErrorMessage('Nama minimal 3 karakter.');
+      scheduleReset();
+      return;
+    }
 
-                    <div className="text-xs text-slate-500 flex items-center gap-2 px-2">
-                        <div className={`w-2 h-2 rounded-full ${isCameraReady ? 'bg-emerald-500' : 'bg-red-500'}`} />
-                        {isCameraReady ? 'Kamera Siap' : 'Kamera Tidak Terhubung'}
-                    </div>
+    setStatus('capturing');
+    setErrorMessage('');
+
+    try {
+      const descriptor = await getFaceDescriptor(videoRef.current);
+
+      if (!descriptor) {
+        throw new Error('Wajah tidak terdeteksi. Pastikan wajah terlihat jelas dan pencahayaan cukup.');
+      }
+
+      saveRegistration({
+        id: cleanedUserId || `USR-${Date.now()}`,
+        name: cleanedName,
+        descriptor: Array.from(descriptor),
+      });
+
+      setStatus('success');
+      setName('');
+      setUserId('');
+      scheduleReset();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Pendaftaran gagal.';
+      setStatus('error');
+      setErrorMessage(message);
+      scheduleReset();
+    }
+  };
+
+  return (
+    <div className="page-shell">
+      <header className="page-header">
+        <h1 className="page-title gradient-text">Daftarkan Wajah</h1>
+        <p className="page-subtitle">
+          Rekam wajah pengguna untuk disimpan sebagai identitas absensi. Pastikan wajah terlihat jelas dan berada di
+          tengah frame kamera.
+        </p>
+      </header>
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        <section className="space-y-4">
+          <div className="glass-card overflow-hidden bg-black">
+            <div className="relative aspect-[4/3] sm:aspect-video">
+              <video
+                ref={videoRef}
+                autoPlay
+                muted
+                playsInline
+                className="h-full w-full object-cover"
+              />
+
+              <div className="pointer-events-none absolute inset-4 rounded-[28px] border border-white/15 sm:inset-6" />
+
+              {status === 'capturing' && (
+                <div className="absolute inset-0 flex items-center justify-center bg-slate-950/55 backdrop-blur-sm">
+                  <div className="glass-card flex items-center gap-3 px-5 py-3 text-sm text-slate-100">
+                    <RefreshCw className="animate-spin text-blue-400" size={18} />
+                    Memproses data wajah...
+                  </div>
                 </div>
+              )}
 
-                <form onSubmit={handleRegister} className="glass-card p-6 space-y-6">
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium text-slate-400 mb-1">Nama Lengkap</label>
-                            <input
-                                type="text"
-                                required
-                                value={name}
-                                onChange={(e) => setName(e.target.value)}
-                                placeholder="John Doe"
-                                className="w-full bg-slate-900/50 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all placeholder:text-slate-600"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-400 mb-1">ID / Nomor Induk (Opsional)</label>
-                            <input
-                                type="text"
-                                value={userId}
-                                onChange={(e) => setUserId(e.target.value)}
-                                placeholder="EMP-123"
-                                className="w-full bg-slate-900/50 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all placeholder:text-slate-600"
-                            />
-                        </div>
-                    </div>
-
-                    <button
-                        type="submit"
-                        disabled={status === 'capturing' || !isCameraReady}
-                        className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed py-4 rounded-xl font-semibold shadow-lg shadow-blue-500/20 transition-all active:scale-95 flex items-center justify-center gap-2"
-                    >
-                        <Camera size={20} />
-                        Daftar Sekarang
-                    </button>
-
-                    <AnimatePresence>
-                        {status === 'success' && (
-                            <motion.div
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: 'auto' }}
-                                exit={{ opacity: 0, height: 0 }}
-                                className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 p-4 rounded-xl flex items-center gap-3"
-                            >
-                                <CheckCircle size={20} />
-                                <span className="text-sm">Pendaftaran berhasil! Data tersimpan secara lokal.</span>
-                            </motion.div>
-                        )}
-                        {status === 'error' && (
-                            <motion.div
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: 'auto' }}
-                                exit={{ opacity: 0, height: 0 }}
-                                className="bg-red-500/10 border border-red-500/20 text-red-400 p-4 rounded-xl flex items-center gap-3"
-                            >
-                                <AlertCircle size={20} />
-                                <span className="text-sm">{errorMessage}</span>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-                </form>
+              {(status === 'loading' || !isCameraReady) && (
+                <div className="absolute inset-0 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm">
+                  <div className="flex flex-col items-center gap-3 text-sm text-slate-300">
+                    <RefreshCw className="animate-spin text-blue-400" size={28} />
+                    Menyiapkan kamera...
+                  </div>
+                </div>
+              )}
             </div>
-        </div>
-    );
+          </div>
+
+          <div className="glass-card panel-padding grid gap-4 sm:grid-cols-2">
+            <div>
+              <p className="text-sm font-semibold text-slate-200">Status Kamera</p>
+              <div className="mt-2 flex items-center gap-2 text-sm text-slate-400">
+                <span className={`h-2.5 w-2.5 rounded-full ${isCameraReady ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                {isCameraReady ? 'Kamera aktif dan siap digunakan' : 'Sedang menyiapkan kamera'}
+              </div>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-slate-200">Tips Registrasi</p>
+              <p className="mt-2 text-sm leading-6 text-slate-400">
+                Gunakan pencahayaan yang cukup, hindari gerakan cepat, dan posisikan wajah di area tengah.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section className="glass-card panel-padding">
+          <div className="mb-6 flex items-start gap-3">
+            <div className="rounded-xl bg-blue-500/10 p-3 text-blue-300">
+              <ShieldCheck size={20} />
+            </div>
+            <div>
+              <h2 className="section-title">Form Registrasi</h2>
+              <p className="mt-1 text-sm leading-6 text-slate-400">
+                Data registrasi akan disimpan lokal di browser. Gunakan nama dan ID yang unik agar mudah dikelola.
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={handleRegister} className="space-y-5">
+            <div className="space-y-2">
+              <label htmlFor="full-name" className="text-sm font-medium text-slate-300">
+                Nama Lengkap
+              </label>
+              <input
+                id="full-name"
+                type="text"
+                required
+                maxLength={60}
+                autoComplete="off"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="Contoh: Salma Oktavia"
+                className="input-base"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="user-id" className="text-sm font-medium text-slate-300">
+                ID / Nomor Induk
+              </label>
+              <input
+                id="user-id"
+                type="text"
+                maxLength={30}
+                autoComplete="off"
+                value={userId}
+                onChange={(event) => setUserId(event.target.value)}
+                placeholder="Contoh: 22123456"
+                className="input-base"
+              />
+              <p className="text-xs text-slate-500">Opsional. Jika kosong, sistem akan membuat ID otomatis.</p>
+            </div>
+
+            <button
+              type="submit"
+              disabled={status === 'capturing' || status === 'loading' || !isCameraReady}
+              className="btn-primary w-full"
+            >
+              <Camera size={18} />
+              Simpan Registrasi
+            </button>
+
+            <AnimatePresence mode="wait">
+              {status === 'success' && (
+                <motion.div
+                  key="success"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  className="status-card border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+                >
+                  <div className="flex items-start gap-3">
+                    <CheckCircle size={20} className="mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-semibold">Registrasi berhasil</p>
+                      <p className="mt-1 text-sm text-emerald-200/90">Data wajah tersimpan dan siap dipakai untuk absensi.</p>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
+              {status === 'error' && (
+                <motion.div
+                  key="error"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  className="status-card border-red-500/20 bg-red-500/10 text-red-300"
+                >
+                  <div className="flex items-start gap-3">
+                    <AlertCircle size={20} className="mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-semibold">Registrasi gagal</p>
+                      <p className="mt-1 text-sm text-red-200/90">{errorMessage}</p>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </form>
+        </section>
+      </div>
+    </div>
+  );
 };
 
 export default Register;
