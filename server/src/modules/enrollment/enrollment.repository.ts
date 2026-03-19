@@ -10,14 +10,21 @@ export type UserRow = {
   updated_at: string;
 };
 
+export type ExistingFaceEmbeddingRow = {
+  user_id: string;
+  nim_nip: string;
+  nama_lengkap: string;
+  embedding_data: string;
+};
+
 type CreateUserWithEmbeddingsInput = {
   nimNip: string;
   namaLengkap: string;
   embeddingsJsonArray: string[];
 };
 
-// Deklarasi statement & transaction di luar
 let findUserByNimNipStmt: Database.Statement | null = null;
+let getAllFaceEmbeddingsStmt: Database.Statement | null = null;
 let insertUserStmt: Database.Statement | null = null;
 let insertEmbeddingStmt: Database.Statement | null = null;
 let createUserWithEmbeddingsTx:
@@ -28,9 +35,14 @@ let createUserWithEmbeddingsTx:
     })
   | null = null;
 
-// Fungsi ini yang bakal dipanggil di server.ts
 export function initEnrollmentStatements() {
-  if (findUserByNimNipStmt && insertUserStmt && insertEmbeddingStmt && createUserWithEmbeddingsTx) {
+  if (
+    findUserByNimNipStmt &&
+    getAllFaceEmbeddingsStmt &&
+    insertUserStmt &&
+    insertEmbeddingStmt &&
+    createUserWithEmbeddingsTx
+  ) {
     return;
   }
 
@@ -39,6 +51,16 @@ export function initEnrollmentStatements() {
     FROM users
     WHERE nim_nip = ?
     LIMIT 1
+  `);
+
+  getAllFaceEmbeddingsStmt = db.prepare(`
+    SELECT
+      u.id AS user_id,
+      u.nim_nip,
+      u.nama_lengkap,
+      f.embedding_data
+    FROM users u
+    JOIN face_embeddings f ON f.user_id = u.id
   `);
 
   insertUserStmt = db.prepare(`
@@ -72,9 +94,8 @@ export function initEnrollmentStatements() {
   });
 }
 
-// Guard buat mastiin init udah dipanggil
 function assertEnrollmentStatementsReady() {
-  if (!findUserByNimNipStmt || !createUserWithEmbeddingsTx) {
+  if (!findUserByNimNipStmt || !getAllFaceEmbeddingsStmt || !createUserWithEmbeddingsTx) {
     throw new Error('Enrollment statements are not initialized');
   }
 }
@@ -82,6 +103,11 @@ function assertEnrollmentStatementsReady() {
 export function findUserByNimNip(nimNip: string): UserRow | undefined {
   assertEnrollmentStatementsReady();
   return findUserByNimNipStmt!.get(nimNip) as UserRow | undefined;
+}
+
+export function getAllFaceEmbeddings(): ExistingFaceEmbeddingRow[] {
+  assertEnrollmentStatementsReady();
+  return getAllFaceEmbeddingsStmt!.all() as ExistingFaceEmbeddingRow[];
 }
 
 export function createUserWithEmbeddings(input: CreateUserWithEmbeddingsInput) {

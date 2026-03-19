@@ -9,10 +9,20 @@ const SUCCESS_RESET_MS = 3500;
 
 type RegisterStatus = 'idle' | 'capturing' | 'submitting' | 'success' | 'error';
 
-type EnrollResponse = {
-  success: boolean;
+type ErrorResponse = {
+  success: false;
+  code: string;
+  message: string;
+  details?: unknown;
+};
+
+type SuccessResponse = {
+  success: true;
+  code?: string;
   message: string;
 };
+
+type EnrollResponse = ErrorResponse | SuccessResponse;
 
 const sanitizeText = (value: string) => value.trim().replace(/\s+/g, ' ');
 
@@ -97,6 +107,11 @@ export default function Register() {
     setErrorMessage('');
 
     try {
+      // 1. Reset timer biar aman kalau user klik berulang kali
+      if (resetTimerRef.current) {
+        window.clearTimeout(resetTimerRef.current);
+      }
+
       const response = await fetch(`${API_BASE_URL}/enroll`, {
         method: 'POST',
         headers: {
@@ -109,28 +124,49 @@ export default function Register() {
         }),
       });
 
+      // 2. Typing eksplisit as EnrollResponse
+      const payload = (await response.json().catch(() => null)) as EnrollResponse | null;
+
       if (response.status === 409) {
         setStatus('error');
-        setErrorMessage(`ID / Nomor Induk ${sanitizedId} sudah terdaftar di sistem.`);
+
+        if (payload?.code === 'DUPLICATE_USER') {
+          setErrorMessage(`ID / Nomor Induk ${sanitizedId} sudah terdaftar di sistem.`);
+          return;
+        }
+
+        if (payload?.code === 'FACE_ALREADY_REGISTERED') {
+          setErrorMessage('Wajah ini sudah terdaftar atas identitas lain.');
+          return;
+        }
+
+        setErrorMessage(payload?.message || 'Registrasi ditolak karena data sudah terdaftar.');
         return;
       }
 
+      // 3. Manfaatin pesan spesifik dari backend kalau ada error 400/500
       if (!response.ok) {
-        throw new Error(`HTTP_ERROR:${response.status}`);
+        throw new Error(payload?.message || `HTTP_ERROR:${response.status}`);
       }
-
-      await response.json().catch(() => ({}) as EnrollResponse);
 
       setStatus('success');
       scheduleSuccessReset();
     } catch (error) {
-      if (error instanceof Error && error.message.startsWith('HTTP_ERROR:')) {
-        setStatus('error');
-        setErrorMessage('Server gagal memproses registrasi wajah.');
-      } else {
-        setStatus('error');
-        setErrorMessage('Server tidak merespons. Pastikan backend sedang berjalan.');
+      setStatus('error');
+      
+      if (error instanceof Error) {
+        // Ngecek spesifik kalau backend mati / connection refused
+        if (error.message.includes('Failed to fetch')) {
+          setErrorMessage('Server tidak merespons. Pastikan backend sedang berjalan.');
+          return;
+        }
+        
+        // Nampilin pesan spesifik hasil throw dari blok if (!response.ok)
+        setErrorMessage(error.message || 'Server gagal memproses registrasi wajah.');
+        return;
       }
+
+      setErrorMessage('Terjadi kesalahan yang tidak diketahui saat registrasi.');
     }
   };
 
