@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { loadModels, detectFace } from '../utils/faceApi';
 
 type LivenessStep = 'LOADING_MODEL' | 'HADAP_DEPAN' | 'BUKA_MULUT' | 'GELENG_KEPALA' | 'SELESAI';

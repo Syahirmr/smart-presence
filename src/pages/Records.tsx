@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Calendar, Download, RefreshCw, Search } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Calendar, Download, LogOut, RefreshCw, Search, ShieldCheck } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
+import { useAdminAuth } from '../stores/useAdminAuth';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
-const ADMIN_TOKEN_STORAGE_KEY = 'admin_token';
 
 type AttendanceRecord = {
   id: string;
@@ -24,6 +25,7 @@ type AdminAttendanceApiItem = {
   confidence_score?: number;
   score?: number;
   user?: {
+    id?: string;
     nama_lengkap?: string;
     nim_nip?: string;
   };
@@ -33,11 +35,16 @@ type AdminAttendanceApiItem = {
 
 type AdminAttendanceResponse = {
   success: boolean;
+  code?: string;
   message: string;
-  data?: AdminAttendanceApiItem[] | { results?: AdminAttendanceApiItem[] };
+  data?: {
+    logs?: AdminAttendanceApiItem[];
+  } | null;
 };
 
 const formatTime = (timestamp: string) => {
+  if (!timestamp) return '-';
+
   return new Date(timestamp).toLocaleTimeString('id-ID', {
     hour: '2-digit',
     minute: '2-digit',
@@ -54,14 +61,16 @@ const formatDate = (date: string) => {
   });
 };
 
-const getAdminToken = () => {
-  const token = window.localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY);
-
-  if (!token) {
-    throw new Error('SESSION_NOT_FOUND');
+const getStatusBadgeClass = (status: string) => {
+  if (status === 'HADIR') {
+    return 'border border-emerald-500/20 bg-emerald-500/10 text-emerald-300';
   }
 
-  return token;
+  if (status === 'DUPLICATE') {
+    return 'border border-amber-500/20 bg-amber-500/10 text-amber-300';
+  }
+
+  return 'border border-red-500/20 bg-red-500/10 text-red-300';
 };
 
 const normalizeAttendanceRecord = (item: AdminAttendanceApiItem): AttendanceRecord => {
@@ -75,11 +84,16 @@ const normalizeAttendanceRecord = (item: AdminAttendanceApiItem): AttendanceReco
     name: item.user?.nama_lengkap || item.name || 'Unknown',
     nim_nip: item.user?.nim_nip || item.nim_nip || '-',
     status: item.status || 'UNKNOWN',
-    score: item.confidence_score || item.score || 0,
+    score: item.confidence_score ?? item.score ?? 0,
   };
 };
 
 export default function Records() {
+  const navigate = useNavigate();
+  const token = useAdminAuth((state) => state.token);
+  const adminName = useAdminAuth((state) => state.adminName);
+  const logout = useAdminAuth((state) => state.logout);
+
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDate, setFilterDate] = useState('');
@@ -87,13 +101,23 @@ export default function Records() {
   const [isExporting, setIsExporting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  const fetchRecords = async () => {
+  const handleUnauthorized = useCallback(() => {
+    logout();
+    navigate('/admin/login', { replace: true });
+  }, [logout, navigate]);
+
+  const fetchRecords = useCallback(async () => {
+    if (!token) {
+      setIsLoading(false);
+      setRecords([]);
+      setErrorMessage('Sesi admin tidak ditemukan. Silakan login ulang.');
+      return;
+    }
+
     setIsLoading(true);
     setErrorMessage('');
 
     try {
-      const token = getAdminToken();
-
       const params = new URLSearchParams();
 
       if (filterDate) {
@@ -109,17 +133,18 @@ export default function Records() {
         },
       );
 
-      if (!response.ok) {
-        throw new Error(`HTTP_ERROR:${response.status}`);
+      const payload = (await response.json().catch(() => null)) as AdminAttendanceResponse | null;
+
+      if (response.status === 401) {
+        handleUnauthorized();
+        return;
       }
 
-      const payload = (await response.json()) as AdminAttendanceResponse;
+      if (!response.ok) {
+        throw new Error(payload?.message || 'Gagal mengambil data absensi dari server.');
+      }
 
-      const rawItems = Array.isArray(payload.data)
-        ? payload.data
-        : Array.isArray(payload.data?.results)
-          ? payload.data.results
-          : [];
+      const rawItems = Array.isArray(payload?.data?.logs) ? payload.data.logs : [];
 
       const normalized = rawItems
         .map(normalizeAttendanceRecord)
@@ -127,23 +152,18 @@ export default function Records() {
 
       setRecords(normalized);
     } catch (error) {
-      if (error instanceof Error && error.message === 'SESSION_NOT_FOUND') {
-        setErrorMessage('Sesi admin tidak ditemukan. Silakan login ulang.');
-      } else if (error instanceof Error && error.message.startsWith('HTTP_ERROR:401')) {
-        setErrorMessage('Sesi admin tidak valid atau sudah kedaluwarsa. Silakan login ulang.');
-      } else {
-        setErrorMessage('Gagal mengambil data absensi dari server.');
-      }
-
       setRecords([]);
+      setErrorMessage(
+        error instanceof Error ? error.message : 'Gagal mengambil data absensi dari server.',
+      );
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [filterDate, handleUnauthorized, token]);
 
   useEffect(() => {
     void fetchRecords();
-  }, [filterDate]);
+  }, [fetchRecords]);
 
   const filteredRecords = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -159,10 +179,14 @@ export default function Records() {
   }, [records, searchTerm]);
 
   const handleExport = async () => {
+    if (!token) {
+      handleUnauthorized();
+      return;
+    }
+
     setIsExporting(true);
 
     try {
-      const token = getAdminToken();
       const params = new URLSearchParams();
 
       if (filterDate) {
@@ -178,8 +202,13 @@ export default function Records() {
         },
       );
 
+      if (response.status === 401) {
+        handleUnauthorized();
+        return;
+      }
+
       if (!response.ok) {
-        throw new Error(`HTTP_ERROR:${response.status}`);
+        throw new Error('Gagal mengekspor CSV dari server.');
       }
 
       const blob = await response.blob();
@@ -193,11 +222,9 @@ export default function Records() {
       link.remove();
       window.URL.revokeObjectURL(url);
     } catch (error) {
-      if (error instanceof Error && error.message === 'SESSION_NOT_FOUND') {
-        window.alert('Sesi admin tidak ditemukan. Silakan login ulang.');
-      } else {
-        window.alert('Gagal mengekspor CSV dari server.');
-      }
+      window.alert(
+        error instanceof Error ? error.message : 'Gagal mengekspor CSV dari server.',
+      );
     } finally {
       setIsExporting(false);
     }
@@ -208,14 +235,29 @@ export default function Records() {
     setFilterDate('');
   };
 
+  const handleLogout = () => {
+    logout();
+    navigate('/admin/login', { replace: true });
+  };
+
   return (
     <div className="page-shell">
       <header className="page-header md:flex-row md:items-end md:justify-between">
         <div className="space-y-3">
+          <div className="inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-blue-300">
+            <ShieldCheck size={14} />
+            Admin Area
+          </div>
+
           <h1 className="page-title gradient-text">Riwayat Absensi</h1>
           <p className="page-subtitle">
             Kelola catatan absensi dari server, cari data berdasarkan nama atau ID, lalu ekspor laporan CSV saat dibutuhkan.
           </p>
+          {adminName && (
+            <p className="text-sm text-slate-400">
+              Login sebagai <span className="font-semibold text-slate-200">{adminName}</span>
+            </p>
+          )}
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row">
@@ -235,6 +277,11 @@ export default function Records() {
           >
             <Download size={18} />
             {isExporting ? 'Mengekspor...' : 'Ekspor CSV'}
+          </button>
+
+          <button onClick={handleLogout} className="btn-secondary w-full sm:w-auto">
+            <LogOut size={18} />
+            Logout
           </button>
         </div>
       </header>
@@ -343,13 +390,7 @@ export default function Records() {
                           <p className="mt-1 text-sm text-slate-400">{record.nim_nip}</p>
                         </div>
                         <span
-                          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                            record.status === 'HADIR'
-                              ? 'border border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
-                              : record.status === 'DUPLICATE'
-                                ? 'border border-amber-500/20 bg-amber-500/10 text-amber-300'
-                                : 'border border-red-500/20 bg-red-500/10 text-red-300'
-                          }`}
+                          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${getStatusBadgeClass(record.status)}`}
                         >
                           {record.status}
                         </span>
@@ -412,13 +453,7 @@ export default function Records() {
                           </td>
                           <td className="px-6 py-4 text-right">
                             <span
-                              className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
-                                record.status === 'HADIR'
-                                  ? 'border border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
-                                  : record.status === 'DUPLICATE'
-                                    ? 'border border-amber-500/20 bg-amber-500/10 text-amber-300'
-                                    : 'border border-red-500/20 bg-red-500/10 text-red-300'
-                              }`}
+                              className={`rounded-full px-3 py-1 text-[11px] font-semibold ${getStatusBadgeClass(record.status)}`}
                             >
                               {record.status}
                             </span>
