@@ -180,7 +180,9 @@ export default function Attendance() {
           });
         } else if (result.status === 'DUPLICATE') {
           setStatus('duplicate');
-          setMessage(`${result.user?.nama_lengkap || 'Pengguna'} sudah absen hari ini.`);
+          setMessage(
+            `${result.user?.nama_lengkap || 'Pengguna'} sudah melakukan absensi dalam 60 menit terakhir.`,
+          );
         } else {
           setStatus('error');
           setMessage('Wajah tidak terdaftar di sistem.');

@@ -12,8 +12,10 @@ type AdminLoginResponse = {
   message?: string;
   data?: {
     token: string;
+    token_type?: string;
     must_change_password?: boolean;
     admin: {
+      id?: number;
       username: string;
     };
   };
@@ -44,7 +46,7 @@ export default function AdminLogin() {
     setErrorMessage('');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/auth/login`, {
+      const response = await fetch(`${API_BASE_URL}/admin/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
