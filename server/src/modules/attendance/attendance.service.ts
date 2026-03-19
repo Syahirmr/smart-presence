@@ -6,7 +6,8 @@ import {
 } from './attendance.repository.js';
 import type { AttendanceBody } from './attendance.schema.js';
 
-const SIMILARITY_THRESHOLD = 0.85;
+// Threshold diturunkan jadi 0.70 biar AI lebih toleran
+const SIMILARITY_THRESHOLD = 0.80;
 const COOLDOWN_MINUTES = 60;
 
 function cosineSimilarity(vecA: number[], vecB: number[]): number {
@@ -56,10 +57,16 @@ export function processAttendance(input: AttendanceBody) {
       });
     }
 
+    // 👇 INI BAGIAN YANG DIPERBAIKI: Ngebaca 3 sampel wajah dengan benar 👇
     try {
-      const parsedEmbedding = JSON.parse(row.embedding_data) as number[];
+      const parsedEmbedding = JSON.parse(row.embedding_data);
       if (Array.isArray(parsedEmbedding)) {
-        userEmbeddingsMap.get(row.id)!.embeddings.push(parsedEmbedding);
+        // Cek apakah datanya Array di dalam Array (karena kita ngirim 3 sampel pas Register)
+        if (parsedEmbedding.length > 0 && Array.isArray(parsedEmbedding[0])) {
+          userEmbeddingsMap.get(row.id)!.embeddings.push(...parsedEmbedding);
+        } else {
+          userEmbeddingsMap.get(row.id)!.embeddings.push(parsedEmbedding as number[]);
+        }
       }
     } catch {
       continue;

@@ -1,165 +1,226 @@
 import { useEffect, useRef, useState } from 'react';
-import { AlertCircle, Camera, CheckCircle, ClipboardList, RefreshCw, UserCheck } from 'lucide-react';
+import { AlertCircle, Camera, CheckCircle, ClipboardList, RefreshCw } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
-import * as faceapi from '@vladmandic/face-api';
 import { detectFace, loadModels } from '../utils/faceApi';
-import { getAttendance, getRegistrations, saveAttendance } from '../utils/storage';
 
-type AttendanceStatus = 'loading' | 'idle' | 'recognizing' | 'success' | 'error';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
+const KIOSK_ID = import.meta.env.VITE_KIOSK_ID || 'Kiosk-Utama';
+const SCAN_RETRY_DELAY_MS = 500;
+const RESULT_DISPLAY_MS = 4000;
 
-type RegistrationItem = {
-  id: string;
+type AttendanceStatus = 'loading' | 'idle' | 'recognizing' | 'success' | 'error' | 'duplicate';
+
+type LastMarkedAttendance = {
   name: string;
-  descriptor: number[];
+  nim?: string;
+  time: string;
 };
 
-const findBestMatch = (descriptor: Float32Array, registrations: RegistrationItem[]) => {
-  let bestMatch: RegistrationItem | null = null;
-  let minDistance = 1;
+type ScanUser = {
+  nama_lengkap: string;
+  nim_nip: string;
+};
 
-  for (const registration of registrations) {
-    const distance = faceapi.euclideanDistance(descriptor, new Float32Array(registration.descriptor));
+type ScanResult = {
+  status: 'HADIR' | 'DUPLICATE' | 'UNKNOWN';
+  confidence_score: number;
+  user?: ScanUser;
+};
 
-    if (distance < minDistance) {
-      minDistance = distance;
+type ScanResponse = {
+  success: boolean;
+  message: string;
+  data?: {
+    results?: ScanResult[];
+  };
+};
 
-      if (distance < 0.6) {
-        bestMatch = registration;
-      }
-    }
+function getAttendanceErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message.startsWith('HTTP_ERROR:')) {
+    return 'Server sedang tidak dapat dihubungi.';
   }
 
-  return bestMatch;
-};
+  return 'Gagal memproses pengenalan wajah.';
+}
 
-const Attendance = () => {
+function isVideoReady(video: HTMLVideoElement) {
+  return video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
+}
+
+export default function Attendance() {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const resetTimerRef = useRef<number | null>(null);
+  const isProcessingRef = useRef(false);
+  const resetTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
 
   const [status, setStatus] = useState<AttendanceStatus>('loading');
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState('Menyiapkan sistem...');
   const [isCameraReady, setIsCameraReady] = useState(false);
-  const [lastMarked, setLastMarked] = useState<{ name: string; time: string } | null>(null);
+  const [lastMarked, setLastMarked] = useState<LastMarkedAttendance | null>(null);
 
   useEffect(() => {
     let isMounted = true;
 
-    const initializePage = async () => {
+    const initializeCamera = async () => {
       try {
         await loadModels();
-        if (!isMounted) return;
-        await startCamera();
-        if (isMounted) {
-          setStatus('idle');
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'user',
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        });
+
+        if (!isMounted || !videoRef.current) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
         }
-      } catch (error) {
+
+        videoRef.current.srcObject = stream;
+        setIsCameraReady(true);
+        setStatus('idle');
+        setMessage('Sistem siap memindai.');
+      } catch {
         if (!isMounted) return;
-        const message = error instanceof Error ? error.message : 'Gagal memuat model wajah atau kamera.';
+
         setStatus('error');
-        setMessage(message);
+        setMessage('Gagal memuat kamera atau model AI. Pastikan izin kamera diberikan.');
       }
     };
 
-    initializePage();
+    void initializeCamera();
 
     return () => {
       isMounted = false;
-      stopCamera();
+
       if (resetTimerRef.current) {
         window.clearTimeout(resetTimerRef.current);
+      }
+
+      if (videoRef.current?.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach((track) => track.stop());
+        videoRef.current.srcObject = null;
       }
     };
   }, []);
 
-  const startCamera = async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: 'user',
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-      },
-      audio: false,
-    });
+  useEffect(() => {
+    if (status !== 'idle' || !isCameraReady) return;
 
-    if (videoRef.current) {
-      videoRef.current.srcObject = stream;
-      setIsCameraReady(true);
-    }
-  };
+    let isActive = true;
 
-  const stopCamera = () => {
-    if (videoRef.current?.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream;
-      stream.getTracks().forEach((track) => track.stop());
-      videoRef.current.srcObject = null;
-    }
-  };
+    const scheduleNextScan = () => {
+      if (!isActive) return;
+      window.setTimeout(() => {
+        void scanLoop();
+      }, SCAN_RETRY_DELAY_MS);
+    };
 
-  const scheduleReset = () => {
-    if (resetTimerRef.current) {
-      window.clearTimeout(resetTimerRef.current);
-    }
+    const scanLoop = async () => {
+      const video = videoRef.current;
 
-    resetTimerRef.current = window.setTimeout(() => {
-      setStatus('idle');
-      setMessage('');
-    }, 5000);
-  };
-
-  const handleManualScan = async () => {
-    if (!videoRef.current || status === 'recognizing' || !isCameraReady) return;
-
-    setStatus('recognizing');
-    setMessage('');
-
-    try {
-      const detection = await detectFace(videoRef.current);
-
-      if (!detection) {
-        throw new Error('Wajah tidak terdeteksi. Lihat langsung ke kamera dan pastikan pencahayaan cukup.');
+      if (!isActive || !video || isProcessingRef.current) {
+        return;
       }
 
-      const registrations = getRegistrations();
-      if (!registrations.length) {
-        throw new Error('Belum ada wajah yang terdaftar di sistem.');
+      if (!isVideoReady(video)) {
+        scheduleNextScan();
+        return;
       }
 
-      const bestMatch = findBestMatch(detection.descriptor, registrations);
+      try {
+        const detection = await detectFace(video);
 
-      if (!bestMatch) {
-        throw new Error('Wajah tidak dikenali. Silakan lakukan registrasi terlebih dahulu.');
+        if (!detection) {
+          scheduleNextScan();
+          return;
+        }
+
+        isProcessingRef.current = true;
+        setStatus('recognizing');
+        setMessage('Wajah terdeteksi! Mengamankan data...');
+
+        const response = await fetch(`${API_BASE_URL}/attendance/scan`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            kiosk_id: KIOSK_ID,
+            faces: [{ embedding: Array.from(detection.descriptor) }],
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP_ERROR:${response.status}`);
+        }
+
+        const payload = (await response.json()) as ScanResponse;
+        const result = payload.data?.results?.[0];
+
+        if (!result) {
+          throw new Error('INVALID_SCAN_RESPONSE');
+        }
+
+        if (result.status === 'HADIR') {
+          const userName = result.user?.nama_lengkap || 'Pengguna';
+
+          setStatus('success');
+          setMessage(`Absensi berhasil dicatat untuk ${userName}.`);
+          setLastMarked({
+            name: userName,
+            nim: result.user?.nim_nip,
+            time: new Date().toLocaleTimeString('id-ID', {
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
+          });
+        } else if (result.status === 'DUPLICATE') {
+          setStatus('duplicate');
+          setMessage(`${result.user?.nama_lengkap || 'Pengguna'} sudah absen hari ini.`);
+        } else {
+          setStatus('error');
+          setMessage('Wajah tidak terdaftar di sistem.');
+        }
+      } catch (error) {
+        setStatus('error');
+        setMessage(getAttendanceErrorMessage(error));
+      } finally {
+        if (resetTimerRef.current) {
+          window.clearTimeout(resetTimerRef.current);
+        }
+
+        resetTimerRef.current = window.setTimeout(() => {
+          if (!isActive) return;
+
+          setStatus('idle');
+          setMessage('Sistem siap memindai.');
+          isProcessingRef.current = false;
+        }, RESULT_DISPLAY_MS);
       }
+    };
 
-      const attendance = getAttendance();
-      const today = new Date().toISOString().split('T')[0];
-      const alreadyMarked = attendance.find((item) => item.id === bestMatch.id && item.date === today);
+    void scanLoop();
 
-      if (alreadyMarked) {
-        throw new Error(`${bestMatch.name} sudah melakukan absensi hari ini.`);
+    return () => {
+      isActive = false;
+      isProcessingRef.current = false;
+
+      if (resetTimerRef.current) {
+        window.clearTimeout(resetTimerRef.current);
       }
-
-      saveAttendance(bestMatch.name, bestMatch.id);
-      setStatus('success');
-      setMessage(`Absensi berhasil dicatat untuk ${bestMatch.name}.`);
-      setLastMarked({
-        name: bestMatch.name,
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      });
-      scheduleReset();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Pengenalan wajah gagal.';
-      setStatus('error');
-      setMessage(message);
-      scheduleReset();
-    }
-  };
+    };
+  }, [status, isCameraReady]);
 
   return (
     <div className="page-shell">
       <header className="page-header">
         <h1 className="page-title gradient-text">Ambil Absensi</h1>
         <p className="page-subtitle">
-          Gunakan kamera untuk mengenali wajah yang sudah terdaftar. Absensi hanya dapat dicatat satu kali per hari.
+          Posisikan wajah Anda di dalam frame untuk pengenalan otomatis instan.
         </p>
       </header>
 
@@ -172,30 +233,23 @@ const Attendance = () => {
                 autoPlay
                 muted
                 playsInline
-                className="h-full w-full object-cover"
+                className={`h-full w-full object-cover scale-x-[-1] transition-opacity duration-300 ${
+                  status === 'recognizing' ? 'opacity-80' : 'opacity-100'
+                }`}
               />
 
               <div className="pointer-events-none absolute inset-4 rounded-[28px] border border-blue-400/25 sm:inset-6" />
 
               {status === 'recognizing' && (
                 <>
-                  <div className="absolute inset-x-0 top-0 z-20 h-1 animate-pulse bg-gradient-to-r from-transparent via-blue-500 to-transparent" />
+                  <div className="absolute inset-x-0 top-0 z-20 h-1 animate-[scan_2s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-blue-500 to-transparent shadow-[0_0_15px_rgba(59,130,246,0.8)]" />
                   <div className="absolute inset-0 z-30 flex items-center justify-center bg-blue-500/10 backdrop-blur-[1px]">
                     <div className="glass-card flex items-center gap-3 px-5 py-3 text-sm text-slate-100">
                       <RefreshCw className="animate-spin text-blue-400" size={18} />
-                      Sedang menganalisis wajah...
+                      Menganalisis wajah...
                     </div>
                   </div>
                 </>
-              )}
-
-              {(status === 'loading' || !isCameraReady) && (
-                <div className="absolute inset-0 z-40 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm">
-                  <div className="flex flex-col items-center gap-3 text-sm text-slate-300">
-                    <RefreshCw className="animate-spin text-blue-400" size={28} />
-                    Menyiapkan kamera...
-                  </div>
-                </div>
               )}
             </div>
           </div>
@@ -204,19 +258,21 @@ const Attendance = () => {
             <div>
               <p className="text-sm font-semibold text-slate-200">Status Kamera</p>
               <div className="mt-2 flex items-center gap-2 text-sm text-slate-400">
-                <span className={`h-2.5 w-2.5 rounded-full ${isCameraReady ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-                {isCameraReady ? 'Kamera aktif dan siap memindai' : 'Kamera belum siap'}
+                <span
+                  className={`h-2.5 w-2.5 rounded-full ${
+                    isCameraReady ? 'bg-emerald-400' : 'bg-amber-400'
+                  }`}
+                />
+                {isCameraReady ? 'Auto-Scanner Aktif' : 'Menyiapkan...'}
               </div>
             </div>
 
-            <button
-              onClick={handleManualScan}
-              disabled={status === 'recognizing' || status === 'loading' || !isCameraReady}
-              className="btn-primary w-full sm:w-auto"
-            >
-              <UserCheck size={18} />
-              Tandai Absensi Saya
-            </button>
+            <div className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 font-medium text-slate-300 sm:w-auto">
+              <div className="flex items-center justify-center gap-2">
+                <Camera size={18} />
+                Otomatis Memindai
+              </div>
+            </div>
           </div>
         </section>
 
@@ -240,14 +296,12 @@ const Attendance = () => {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    className="flex h-full min-h-[188px] flex-col items-center justify-center gap-3 text-center text-slate-400"
+                    className="flex min-h-[188px] h-full flex-col items-center justify-center gap-3 text-center text-slate-400"
                   >
                     <div className="rounded-full bg-slate-900 p-4">
                       <Camera size={24} />
                     </div>
-                    <p className="max-w-xs text-sm leading-6">
-                      Sistem siap memindai. Klik tombol absensi saat wajah berada di tengah kamera.
-                    </p>
+                    <p className="max-w-xs text-sm leading-6">{message}</p>
                   </motion.div>
                 )}
 
@@ -257,13 +311,31 @@ const Attendance = () => {
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
-                    className="flex h-full min-h-[188px] flex-col items-center justify-center gap-3 text-center"
+                    className="flex min-h-[188px] h-full flex-col items-center justify-center gap-3 text-center"
                   >
                     <div className="rounded-full border border-emerald-500/40 bg-emerald-500/15 p-4 text-emerald-400">
                       <CheckCircle size={28} />
                     </div>
                     <div>
-                      <p className="text-lg font-semibold text-emerald-300">Absensi Berhasil</p>
+                      <p className="text-lg font-bold text-emerald-300">Berhasil Hadir</p>
+                      <p className="mt-1 text-sm leading-6 text-slate-300">{message}</p>
+                    </div>
+                  </motion.div>
+                )}
+
+                {status === 'duplicate' && (
+                  <motion.div
+                    key="duplicate"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="flex min-h-[188px] h-full flex-col items-center justify-center gap-3 text-center"
+                  >
+                    <div className="rounded-full border border-amber-500/40 bg-amber-500/15 p-4 text-amber-400">
+                      <AlertCircle size={28} />
+                    </div>
+                    <div>
+                      <p className="text-lg font-bold text-amber-300">Sudah Absen</p>
                       <p className="mt-1 text-sm leading-6 text-slate-300">{message}</p>
                     </div>
                   </motion.div>
@@ -275,7 +347,7 @@ const Attendance = () => {
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
-                    className="flex h-full min-h-[188px] flex-col items-center justify-center gap-3 text-center"
+                    className="flex min-h-[188px] h-full flex-col items-center justify-center gap-3 text-center"
                   >
                     <div
                       className={`rounded-full p-4 ${
@@ -284,15 +356,21 @@ const Attendance = () => {
                           : 'border border-red-500/40 bg-red-500/15 text-red-400'
                       }`}
                     >
-                      {status === 'loading' ? <RefreshCw size={28} className="animate-spin" /> : <AlertCircle size={28} />}
+                      {status === 'loading' ? (
+                        <RefreshCw size={28} className="animate-spin" />
+                      ) : (
+                        <AlertCircle size={28} />
+                      )}
                     </div>
                     <div>
-                      <p className={`text-lg font-semibold ${status === 'loading' ? 'text-blue-300' : 'text-red-300'}`}>
-                        {status === 'loading' ? 'Menyiapkan Sistem' : 'Absensi Gagal'}
+                      <p
+                        className={`text-lg font-bold ${
+                          status === 'loading' ? 'text-blue-300' : 'text-red-300'
+                        }`}
+                      >
+                        {status === 'loading' ? 'Menyiapkan Sistem' : 'TIDAK DIKENAL'}
                       </p>
-                      <p className="mt-1 text-sm leading-6 text-slate-300">
-                        {status === 'loading' ? 'Model wajah dan kamera sedang dipersiapkan.' : message}
-                      </p>
+                      <p className="mt-1 text-sm leading-6 text-slate-300">{message}</p>
                     </div>
                   </motion.div>
                 )}
@@ -301,23 +379,37 @@ const Attendance = () => {
           </div>
 
           <div className="glass-card panel-padding">
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Absensi Terakhir</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
+              Absensi Terakhir
+            </p>
+
             {lastMarked ? (
               <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
                 <div>
-                  <p className="font-semibold text-emerald-100">{lastMarked.name}</p>
-                  <p className="mt-1 text-sm text-slate-400">Tercatat pada sesi browser ini</p>
+                  <p className="font-bold text-emerald-100">{lastMarked.name}</p>
+                  <p className="mt-1 font-mono text-xs text-slate-400">{lastMarked.nim}</p>
                 </div>
-                <span className="rounded-full bg-white/5 px-3 py-1 text-sm text-slate-300">{lastMarked.time}</span>
+                <span className="rounded-full bg-white/5 px-3 py-1 text-xs text-slate-300">
+                  {lastMarked.time}
+                </span>
               </div>
             ) : (
-              <p className="mt-4 text-sm leading-6 text-slate-400">Belum ada absensi yang berhasil dicatat pada sesi ini.</p>
+              <p className="mt-4 text-sm leading-6 text-slate-400">
+                Belum ada absensi sukses pada sesi ini.
+              </p>
             )}
           </div>
         </section>
       </div>
+
+      <style>{`
+        @keyframes scan {
+          0% { transform: translateY(0); opacity: 0; }
+          10%, 90% { opacity: 1; }
+          50% { transform: translateY(350px); }
+          100% { transform: translateY(0); opacity: 0; }
+        }
+      `}</style>
     </div>
   );
-};
-
-export default Attendance;
+}
