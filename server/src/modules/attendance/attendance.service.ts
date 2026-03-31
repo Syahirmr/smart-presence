@@ -6,18 +6,14 @@ import {
 } from './attendance.repository.js';
 import type { AttendanceBody } from './attendance.schema.js';
 
-// Threshold diturunkan jadi 0.70 biar AI lebih toleran
-const SIMILARITY_THRESHOLD = 0.80;
+// Threshold Euclidean Distance (lebih kecil = lebih mirip). Default face-api adalah 0.6
+const SIMILARITY_THRESHOLD = 0.70;
 const COOLDOWN_MINUTES = 60;
 
-function cosineSimilarity(vecA: number[], vecB: number[]): number {
-  const len = Math.min(vecA.length, vecB.length);
-
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-
-  for (let i = 0; i < len; i++) {
+function euclideanDistance(vecA: number[], vecB: number[]): number {
+  if (vecA.length !== vecB.length) return 999;
+  let sum = 0;
+  for (let i = 0; i < vecA.length; i++) {
     const a = vecA[i];
     const b = vecB[i];
 
@@ -25,13 +21,10 @@ function cosineSimilarity(vecA: number[], vecB: number[]): number {
       continue;
     }
 
-    dotProduct += a * b;
-    normA += a * a;
-    normB += b * b;
+    const diff = a - b;
+    sum += diff * diff;
   }
-
-  if (normA === 0 || normB === 0) return 0;
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+  return Math.sqrt(sum);
 }
 
 export function processAttendance(input: AttendanceBody) {
@@ -80,7 +73,7 @@ export function processAttendance(input: AttendanceBody) {
   const acceptedUserIdsInRequest = new Set<string>();
 
   for (const face of faces) {
-    let bestScore = -1;
+    let bestScore = 999;
     let bestMatchUser: { id: string; nim_nip: string; nama_lengkap: string } | null = null;
 
     for (const [userId, userData] of userEmbeddingsMap.entries()) {
@@ -89,8 +82,8 @@ export function processAttendance(input: AttendanceBody) {
           continue;
         }
 
-        const score = cosineSimilarity(face.embedding, dbEmbedding);
-        if (score > bestScore) {
+        const score = euclideanDistance(face.embedding, dbEmbedding);
+        if (score < bestScore) {
           bestScore = score;
           bestMatchUser = {
             id: userId,
@@ -101,11 +94,11 @@ export function processAttendance(input: AttendanceBody) {
       }
     }
 
-    if (bestScore < SIMILARITY_THRESHOLD || !bestMatchUser) {
+    if (bestScore > SIMILARITY_THRESHOLD || !bestMatchUser) {
       results.push({
         status: 'UNKNOWN',
         user: null,
-        confidence_score: bestScore > 0 ? Number(bestScore.toFixed(4)) : 0,
+        confidence_score: Number(bestScore.toFixed(4)),
       });
       continue;
     }

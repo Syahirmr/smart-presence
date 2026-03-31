@@ -6,41 +6,33 @@ import {
 } from './enrollment.repository.js';
 import type { EnrollBody } from './enrollment.schema.js';
 
-const FACE_DUPLICATE_SIMILARITY_THRESHOLD = 0.88;
+const FACE_DUPLICATE_DISTANCE_THRESHOLD = 0.50;
 
-function cosineSimilarity(vecA: number[], vecB: number[]): number {
+function euclideanDistance(vecA: number[], vecB: number[]): number {
   if (vecA.length !== vecB.length) {
-    return -1;
+    return 999;
   }
 
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-
+  let sum = 0;
   for (let i = 0; i < vecA.length; i++) {
     const a = vecA[i];
     const b = vecB[i];
 
     if (a === undefined || b === undefined) {
-      return -1;
+      continue;
     }
 
-    dotProduct += a * b;
-    normA += a * a;
-    normB += b * b;
+    const diff = a - b;
+    sum += diff * diff;
   }
 
-  if (normA === 0 || normB === 0) {
-    return -1;
-  }
-
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+  return Math.sqrt(sum);
 }
 
 function findBestDuplicateMatch(newEmbeddings: number[][]) {
   const existingRows = getAllFaceEmbeddings();
 
-  let bestScore = -1;
+  let bestScore = 999;
   let bestMatch: {
     user_id: string;
     nim_nip: string;
@@ -63,9 +55,9 @@ function findBestDuplicateMatch(newEmbeddings: number[][]) {
     }
 
     for (const newEmbedding of newEmbeddings) {
-      const score = cosineSimilarity(newEmbedding, dbEmbedding);
+      const score = euclideanDistance(newEmbedding, dbEmbedding);
 
-      if (score > bestScore) {
+      if (score < bestScore) {
         bestScore = score;
         bestMatch = {
           user_id: row.user_id,
@@ -80,7 +72,7 @@ function findBestDuplicateMatch(newEmbeddings: number[][]) {
     bestScore,
     bestMatch,
     isDuplicate:
-      bestMatch !== null && bestScore >= FACE_DUPLICATE_SIMILARITY_THRESHOLD,
+      bestMatch !== null && bestScore <= FACE_DUPLICATE_DISTANCE_THRESHOLD,
   };
 }
 
