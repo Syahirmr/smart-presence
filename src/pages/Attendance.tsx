@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertCircle, Camera, CheckCircle, ClipboardList, RefreshCw } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { detectFace, loadModels } from '../utils/faceApi';
+import { detectAllFaces, loadModels } from '../utils/faceApi';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
 const KIOSK_ID = import.meta.env.VITE_KIOSK_ID || 'Kiosk-Utama';
@@ -132,16 +132,18 @@ export default function Attendance() {
       }
 
       try {
-        const detection = await detectFace(video);
+        const detections = await detectAllFaces(video);
 
-        if (!detection) {
+        if (!detections || detections.length === 0) {
           scheduleNextScan();
           return;
         }
 
         isProcessingRef.current = true;
         setStatus('recognizing');
-        setMessage('Wajah terdeteksi! Mengamankan data...');
+        setMessage(`${detections.length} Wajah terdeteksi! Mengamankan data...`);
+
+        const facesData = detections.map(d => ({ embedding: Array.from(d.descriptor) }));
 
         const response = await fetch(`${API_BASE_URL}/attendance/scan`, {
           method: 'POST',
@@ -150,7 +152,7 @@ export default function Attendance() {
           },
           body: JSON.stringify({
             kiosk_id: KIOSK_ID,
-            faces: [{ embedding: Array.from(detection.descriptor) }],
+            faces: facesData,
           }),
         });
 
@@ -159,34 +161,43 @@ export default function Attendance() {
         }
 
         const payload = (await response.json()) as ScanResponse;
-        const result = payload.data?.results?.[0];
+        const results = payload.data?.results;
 
-        if (!result) {
+        if (!results || results.length === 0) {
           throw new Error('INVALID_SCAN_RESPONSE');
         }
 
-        if (result.status === 'HADIR') {
-          const userName = result.user?.nama_lengkap || 'Pengguna';
+        const presentUsers = results.filter(r => r.status === 'HADIR');
+        const duplicateUsers = results.filter(r => r.status === 'DUPLICATE');
 
+        let finalMessage = '';
+
+        if (presentUsers.length > 0) {
+          const names = presentUsers.map(r => r.user?.nama_lengkap.split(' ')[0] || 'Pengguna').join(', ');
           setStatus('success');
-          setMessage(`Absensi berhasil dicatat untuk ${userName}.`);
+          finalMessage = `Absensi sukses: ${names}`;
+          
           setLastMarked({
-            name: userName,
-            nim: result.user?.nim_nip,
+            name: names,
+            nim: presentUsers.map(r => r.user?.nim_nip).join(', '),
             time: new Date().toLocaleTimeString('id-ID', {
               hour: '2-digit',
               minute: '2-digit',
             }),
           });
-        } else if (result.status === 'DUPLICATE') {
+        } else if (duplicateUsers.length > 0) {
+          const names = duplicateUsers.map(r => r.user?.nama_lengkap.split(' ')[0] || 'Pengguna').join(', ');
           setStatus('duplicate');
-          setMessage(
-            `${result.user?.nama_lengkap || 'Pengguna'} sudah melakukan absensi dalam 60 menit terakhir.`,
-          );
+          
+          // Konflik sudah digabung dan dibersihkan di sini:
+          finalMessage = `${names} sudah melakukan absensi dalam 60 menit terakhir.`;
+          
         } else {
           setStatus('error');
-          setMessage('Wajah tidak terdaftar di sistem.');
+          finalMessage = 'Wajah tidak terdaftar.';
         }
+        
+        setMessage(finalMessage);
       } catch (error) {
         setStatus('error');
         setMessage(getAttendanceErrorMessage(error));

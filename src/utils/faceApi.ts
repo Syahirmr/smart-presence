@@ -24,6 +24,15 @@ export const detectFace = async (video: HTMLVideoElement) => {
     return detection;
 };
 
+export const detectAllFaces = async (video: HTMLVideoElement) => {
+    const options = new faceapi.TinyFaceDetectorOptions();
+    const detections = await faceapi
+        .detectAllFaces(video, options)
+        .withFaceLandmarks()
+        .withFaceDescriptors();
+    return detections;
+};
+
 export const getFaceDescriptor = async (image: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement) => {
     const options = new faceapi.TinyFaceDetectorOptions();
     const detection = await faceapi
