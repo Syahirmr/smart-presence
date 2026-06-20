@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Calendar, Download, LogOut, RefreshCw, Search, ShieldCheck } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import { io } from 'socket.io-client';
 import { useAdminAuth } from '../stores/useAdminAuth';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
@@ -100,6 +101,27 @@ export default function Records() {
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [toasts, setToasts] = useState<{
+    id: string;
+    name: string;
+    nim: string;
+    kioskId: string;
+    time: string;
+  }[]>([]);
+  const [recentIds, setRecentIds] = useState<string[]>([]);
+
+  const showToast = useCallback((msg: {
+    name: string;
+    nim: string;
+    kioskId: string;
+    time: string;
+  }) => {
+    const id = Math.random().toString(36).substring(2, 9);
+    setToasts((prev) => [...prev, { ...msg, id }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4000);
+  }, []);
 
   const handleUnauthorized = useCallback(() => {
     logout();
@@ -164,6 +186,73 @@ export default function Records() {
   useEffect(() => {
     void fetchRecords();
   }, [fetchRecords]);
+
+  useEffect(() => {
+    if (!token) return;
+
+    const socketUrl = API_BASE_URL.replace('/api', '');
+    const socket = io(socketUrl, {
+      transports: ['websocket'],
+    });
+
+    socket.on('connect', () => {
+      console.log('Connected to WebSocket server');
+    });
+
+    socket.on('new_attendance', (data: {
+      kiosk_id: string;
+      waktu_hadir: string;
+      confidence_score: number;
+      user: { id: string; nim_nip: string; nama_lengkap: string };
+    }) => {
+      const mappedItem = normalizeAttendanceRecord({
+        id: data.user.id,
+        waktu_hadir: data.waktu_hadir,
+        confidence_score: data.confidence_score,
+        status: 'HADIR',
+        user: data.user,
+      });
+
+      setRecords((prev) => {
+        const alreadyExists = prev.some(
+          (r) => r.nim_nip === mappedItem.nim_nip && r.timestamp === mappedItem.timestamp
+        );
+        if (alreadyExists) return prev;
+
+        if (filterDate) {
+          const recordDate = mappedItem.timestamp.split('T')[0];
+          if (recordDate !== filterDate) return prev;
+        }
+
+        // Trigger toast
+        showToast({
+          name: mappedItem.name,
+          nim: mappedItem.nim_nip,
+          kioskId: data.kiosk_id,
+          time: new Date(mappedItem.timestamp).toLocaleTimeString('id-ID', {
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+        });
+
+        // Trigger row highlight
+        setRecentIds((ids) => [...ids, mappedItem.id]);
+        setTimeout(() => {
+          setRecentIds((ids) => ids.filter((id) => id !== mappedItem.id));
+        }, 3000);
+
+        return [mappedItem, ...prev];
+      });
+    });
+
+    socket.on('disconnect', () => {
+      console.log('Disconnected from WebSocket');
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [token, filterDate, showToast]);
 
   const filteredRecords = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -382,7 +471,9 @@ export default function Records() {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
                       transition={{ delay: Math.min(index * 0.03, 0.2) }}
-                      className="rounded-2xl border border-white/10 bg-slate-950/35 p-4"
+                      className={`rounded-2xl border border-white/10 bg-slate-950/35 p-4 transition-colors duration-1000 ${
+                        recentIds.includes(record.id) ? 'bg-emerald-500/10' : ''
+                      }`}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
@@ -432,7 +523,9 @@ export default function Records() {
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, scale: 0.98 }}
                           transition={{ delay: Math.min(index * 0.02, 0.12) }}
-                          className="hover:bg-white/[0.02]"
+                          className={`hover:bg-white/[0.02] transition-colors duration-1000 ${
+                            recentIds.includes(record.id) ? 'bg-emerald-500/10' : ''
+                          }`}
                         >
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
@@ -468,6 +561,34 @@ export default function Records() {
           )}
         </section>
       </section>
+
+      {/* Floating Toast Notification Container */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 max-w-sm w-full">
+        <AnimatePresence>
+          {toasts.map((toast) => (
+            <motion.div
+              key={toast.id}
+              initial={{ opacity: 0, y: 50, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -20, scale: 0.95 }}
+              className="glass-card panel-padding border-l-4 border-l-emerald-500 shadow-2xl flex items-center justify-between gap-3 bg-slate-900/95"
+            >
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-emerald-400">
+                  Presensi Masuk Real-Time
+                </p>
+                <p className="mt-1 text-sm font-bold text-slate-100">{toast.name}</p>
+                <p className="text-xs text-slate-400">
+                  NIM: {toast.nim} | {toast.kioskId}
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-mono text-emerald-300">
+                {toast.time}
+              </span>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
