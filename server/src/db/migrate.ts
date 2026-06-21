@@ -27,6 +27,7 @@ export function runMigrations() {
         confidence_score REAL NOT NULL,
         status TEXT NOT NULL,
         kiosk_id TEXT NOT NULL, -- 🔥 FIXED: Udah sinkron sama payload Kiosk
+        keterangan TEXT,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
@@ -44,6 +45,13 @@ export function runMigrations() {
       -- 🔥 FIXED: Composite index maut buat optimasi query Anti-Dobel 60 menit
       CREATE INDEX IF NOT EXISTS idx_attendance_logs_cooldown ON attendance_logs(user_id, waktu_hadir DESC);
     `);
+
+    // Safe dynamic migration: add 'keterangan' column if it does not exist
+    const columns = db.pragma('table_info(attendance_logs)') as { name: string }[];
+    const hasKeterangan = columns.some((col) => col.name === 'keterangan');
+    if (!hasKeterangan) {
+      db.exec('ALTER TABLE attendance_logs ADD COLUMN keterangan TEXT;');
+    }
 
     logger.info('SQLite migrations completed');
   } catch (error) {

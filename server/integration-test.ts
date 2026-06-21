@@ -208,16 +208,101 @@ async function runTests() {
     assert(logsRes.status === 200, 'Get logs responds with 200 OK');
     assert(logsJson.data.logs.length > 0, 'Logs response contains logs data');
 
-    // 10. Admin Export CSV (F-06)
-    console.log('\n--- 10. Testing Admin Export CSV (F-06) ---');
+    // 10. Admin Export Excel (.xlsx) (F-06)
+    console.log('\n--- 10. Testing Admin Export Excel (F-06) ---');
     const today = new Date().toISOString().split('T')[0];
     const exportRes = await fetch(`${BASE_URL}/admin/attendance/export?date=${today}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    const exportText = await exportRes.text();
-    assert(exportRes.status === 200, 'Export CSV responds with 200 OK');
-    assert(exportText.includes('id,user_id,nim_nip,nama_lengkap'), 'Exported CSV contains correct header');
-    assert(exportText.includes('User A'), 'Exported CSV contains User A presence log');
+    const exportBuffer = await exportRes.arrayBuffer();
+    assert(exportRes.status === 200, 'Export Excel responds with 200 OK');
+    assert(
+      exportRes.headers.get('content-type')?.includes('spreadsheetml.sheet') === true,
+      'Response content-type is xlsx spreadsheet',
+    );
+    assert(exportBuffer.byteLength > 0, 'Exported Excel buffer has non-zero size');
+
+    // 11. Testing Date Range Log Filter
+    console.log('\n--- 11. Testing Date Range Log Filter ---');
+    const rangeRes = await fetch(
+      `${BASE_URL}/admin/attendance?start_date=${today}&end_date=${today}`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    );
+    const rangeJson: any = await rangeRes.json();
+    assert(rangeRes.status === 200, 'Get logs by date range responds with 200 OK');
+    assert(rangeJson.data.logs.length > 0, 'Date range filter returns log logs data');
+
+    // 12. Testing Manual Override Log Insert (Sakit)
+    console.log('\n--- 12. Testing Manual Override Log Insert (Sakit) ---');
+    const overrideInsertRes = await fetch(`${BASE_URL}/admin/attendance/override`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        nim_nip: '22123456', // User A
+        tanggal: today,
+        status: 'SAKIT',
+        keterangan: 'Surat dokter sakit demam',
+      }),
+    });
+    const overrideInsertJson: any = await overrideInsertRes.json();
+    assert(overrideInsertRes.status === 200, 'Override insert responds with 200 OK');
+    assert(
+      overrideInsertJson.code === 'ADMIN_ATTENDANCE_OVERRIDDEN',
+      'Override insert response code is correct',
+    );
+    assert(overrideInsertJson.data.status === 'SAKIT', 'Override insert status is SAKIT');
+    assert(
+      overrideInsertJson.data.keterangan === 'Surat dokter sakit demam',
+      'Override insert keterangan is saved',
+    );
+
+    // 13. Testing Manual Override Log Update (Change from SAKIT to IZIN)
+    console.log('\n--- 13. Testing Manual Override Log Update (Sakit -> Izin) ---');
+    const overrideUpdateRes = await fetch(`${BASE_URL}/admin/attendance/override`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        nim_nip: '22123456', // User A
+        tanggal: today,
+        status: 'IZIN',
+        keterangan: 'Dispensasi izin lomba mahasiswa',
+      }),
+    });
+    const overrideUpdateJson: any = await overrideUpdateRes.json();
+    assert(overrideUpdateRes.status === 200, 'Override update responds with 200 OK');
+    assert(overrideUpdateJson.data.status === 'IZIN', 'Override update status is updated to IZIN');
+    assert(
+      overrideUpdateJson.data.keterangan === 'Dispensasi izin lomba mahasiswa',
+      'Override update keterangan is updated',
+    );
+
+    // 14. Testing Manual Override Invalid NIM/NIP Validation
+    console.log('\n--- 14. Testing Manual Override Invalid NIM/NIP Validation ---');
+    const overrideInvalidRes = await fetch(`${BASE_URL}/admin/attendance/override`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        nim_nip: '99999999', // Non-existent user NIM
+        tanggal: today,
+        status: 'SAKIT',
+        keterangan: 'Sakit saja',
+      }),
+    });
+    const overrideInvalidJson: any = await overrideInvalidRes.json();
+    assert(overrideInvalidRes.status === 404, 'Override invalid user responds with 404 Not Found');
+    assert(overrideInvalidJson.code === 'USER_NOT_FOUND', 'Response error code is USER_NOT_FOUND');
+
 
   } catch (error) {
     console.error('Test execution failed with error:', error);

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Calendar, Download, LogOut, RefreshCw, Search, ShieldCheck } from 'lucide-react';
+import { Calendar, Download, LogOut, RefreshCw, Search, ShieldCheck, Plus, Edit2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
@@ -13,8 +13,9 @@ type AttendanceRecord = {
   date: string;
   name: string;
   nim_nip: string;
-  status: 'HADIR' | 'DUPLICATE' | 'UNKNOWN' | string;
+  status: 'HADIR' | 'DUPLICATE' | 'UNKNOWN' | 'SAKIT' | 'IZIN' | 'ALPHA' | string;
   score: number;
+  keterangan?: string;
 };
 
 type AdminAttendanceApiItem = {
@@ -25,6 +26,7 @@ type AdminAttendanceApiItem = {
   status?: string;
   confidence_score?: number;
   score?: number;
+  keterangan?: string;
   user?: {
     id?: string;
     nama_lengkap?: string;
@@ -49,6 +51,7 @@ const formatTime = (timestamp: string) => {
   return new Date(timestamp).toLocaleTimeString('id-ID', {
     hour: '2-digit',
     minute: '2-digit',
+    second: '2-digit',
   });
 };
 
@@ -71,6 +74,18 @@ const getStatusBadgeClass = (status: string) => {
     return 'border border-amber-500/20 bg-amber-500/10 text-amber-300';
   }
 
+  if (status === 'SAKIT') {
+    return 'border border-blue-500/20 bg-blue-500/10 text-blue-300';
+  }
+
+  if (status === 'IZIN') {
+    return 'border border-purple-500/20 bg-purple-500/10 text-purple-300';
+  }
+
+  if (status === 'ALPHA') {
+    return 'border border-red-500/20 bg-red-500/10 text-red-300';
+  }
+
   return 'border border-red-500/20 bg-red-500/10 text-red-300';
 };
 
@@ -86,6 +101,7 @@ const normalizeAttendanceRecord = (item: AdminAttendanceApiItem): AttendanceReco
     nim_nip: item.user?.nim_nip || item.nim_nip || '-',
     status: item.status || 'UNKNOWN',
     score: item.confidence_score ?? item.score ?? 0,
+    keterangan: item.keterangan || '',
   };
 };
 
@@ -97,7 +113,8 @@ export default function Records() {
 
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterDate, setFilterDate] = useState('');
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -109,6 +126,16 @@ export default function Records() {
     time: string;
   }[]>([]);
   const [recentIds, setRecentIds] = useState<string[]>([]);
+
+  // Manual Override Modal states
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
+  const [overrideNim, setOverrideNim] = useState('');
+  const [overrideDate, setOverrideDate] = useState(new Date().toISOString().split('T')[0]);
+  const [overrideStatus, setOverrideStatus] = useState('HADIR');
+  const [overrideKeterangan, setOverrideKeterangan] = useState('');
+  const [modalError, setModalError] = useState('');
+  const [isSubmittingOverride, setIsSubmittingOverride] = useState(false);
 
   const showToast = useCallback((msg: {
     name: string;
@@ -142,8 +169,13 @@ export default function Records() {
     try {
       const params = new URLSearchParams();
 
-      if (filterDate) {
-        params.set('date', filterDate);
+      if (filterStartDate && filterEndDate) {
+        params.set('start_date', filterStartDate);
+        params.set('end_date', filterEndDate);
+      } else if (filterStartDate) {
+        params.set('date', filterStartDate);
+      } else if (filterEndDate) {
+        params.set('date', filterEndDate);
       }
 
       const response = await fetch(
@@ -181,12 +213,13 @@ export default function Records() {
     } finally {
       setIsLoading(false);
     }
-  }, [filterDate, handleUnauthorized, token]);
+  }, [filterStartDate, filterEndDate, handleUnauthorized, token]);
 
   useEffect(() => {
     void fetchRecords();
   }, [fetchRecords]);
 
+  // WebSocket Live Real-Time Updates
   useEffect(() => {
     if (!token) return;
 
@@ -203,28 +236,53 @@ export default function Records() {
       kiosk_id: string;
       waktu_hadir: string;
       confidence_score: number;
+      status?: string;
+      keterangan?: string;
       user: { id: string; nim_nip: string; nama_lengkap: string };
     }) => {
       const mappedItem = normalizeAttendanceRecord({
         id: data.user.id,
         waktu_hadir: data.waktu_hadir,
         confidence_score: data.confidence_score,
-        status: 'HADIR',
+        status: data.status || 'HADIR',
+        keterangan: data.keterangan || '',
         user: data.user,
       });
 
       setRecords((prev) => {
-        const alreadyExists = prev.some(
-          (r) => r.nim_nip === mappedItem.nim_nip && r.timestamp === mappedItem.timestamp
+        // Cek jika log di hari yang sama untuk NIM tersebut sudah ada
+        const existingIndex = prev.findIndex(
+          (r) => r.nim_nip === mappedItem.nim_nip && r.date === mappedItem.date
         );
-        if (alreadyExists) return prev;
 
-        if (filterDate) {
+        let newRecords = [...prev];
+
+        // Terapkan filter tanggal jika sedang aktif
+        if (filterStartDate && filterEndDate) {
           const recordDate = mappedItem.timestamp.split('T')[0];
-          if (recordDate !== filterDate) return prev;
+          if (recordDate < filterStartDate || recordDate > filterEndDate) {
+            if (existingIndex !== -1) {
+              newRecords.splice(existingIndex, 1);
+            }
+            return newRecords;
+          }
+        } else if (filterStartDate) {
+          const recordDate = mappedItem.timestamp.split('T')[0];
+          if (recordDate !== filterStartDate) {
+            if (existingIndex !== -1) {
+              newRecords.splice(existingIndex, 1);
+            }
+            return newRecords;
+          }
         }
 
-        // Trigger toast
+        if (existingIndex !== -1) {
+          newRecords[existingIndex] = mappedItem;
+        } else {
+          newRecords.unshift(mappedItem);
+        }
+
+        // Tampilkan Toast
         showToast({
           name: mappedItem.name,
           nim: mappedItem.nim_nip,
@@ -235,13 +293,13 @@ export default function Records() {
           }),
         });
 
-        // Trigger row highlight
+        // Trigger row glow
         setRecentIds((ids) => [...ids, mappedItem.id]);
         setTimeout(() => {
           setRecentIds((ids) => ids.filter((id) => id !== mappedItem.id));
         }, 3000);
 
-        return [mappedItem, ...prev];
+        return newRecords;
       });
     });
 
@@ -252,7 +310,7 @@ export default function Records() {
     return () => {
       socket.disconnect();
     };
-  }, [token, filterDate, showToast]);
+  }, [token, filterStartDate, filterEndDate, showToast]);
 
   const filteredRecords = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -278,8 +336,13 @@ export default function Records() {
     try {
       const params = new URLSearchParams();
 
-      if (filterDate) {
-        params.set('date', filterDate);
+      if (filterStartDate && filterEndDate) {
+        params.set('start_date', filterStartDate);
+        params.set('end_date', filterEndDate);
+      } else if (filterStartDate) {
+        params.set('date', filterStartDate);
+      } else if (filterEndDate) {
+        params.set('date', filterEndDate);
       }
 
       const response = await fetch(
@@ -297,7 +360,7 @@ export default function Records() {
       }
 
       if (!response.ok) {
-        throw new Error('Gagal mengekspor CSV dari server.');
+        throw new Error('Gagal mengekspor Excel dari server.');
       }
 
       const blob = await response.blob();
@@ -305,14 +368,14 @@ export default function Records() {
       const link = document.createElement('a');
 
       link.href = url;
-      link.download = `attendance_report_${filterDate || new Date().toISOString().split('T')[0]}.csv`;
+      link.download = `attendance_report_${filterStartDate || new Date().toISOString().split('T')[0]}.xlsx`;
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
     } catch (error) {
       window.alert(
-        error instanceof Error ? error.message : 'Gagal mengekspor CSV dari server.',
+        error instanceof Error ? error.message : 'Gagal mengekspor Excel dari server.',
       );
     } finally {
       setIsExporting(false);
@@ -321,12 +384,88 @@ export default function Records() {
 
   const handleResetFilters = () => {
     setSearchTerm('');
-    setFilterDate('');
+    setFilterStartDate('');
+    setFilterEndDate('');
   };
 
   const handleLogout = () => {
     logout();
     navigate('/admin/login', { replace: true });
+  };
+
+  // Override Modal Actions
+  const handleOpenOverrideModal = (record?: AttendanceRecord) => {
+    if (record) {
+      setModalMode('edit');
+      setOverrideNim(record.nim_nip);
+      setOverrideDate(record.date || new Date().toISOString().split('T')[0]);
+      setOverrideStatus(record.status === 'UNKNOWN' ? 'HADIR' : record.status);
+      setOverrideKeterangan(record.keterangan || '');
+    } else {
+      setModalMode('create');
+      setOverrideNim('');
+      setOverrideDate(new Date().toISOString().split('T')[0]);
+      setOverrideStatus('HADIR');
+      setOverrideKeterangan('');
+    }
+    setModalError('');
+    setIsModalOpen(true);
+  };
+
+  const handleCloseOverrideModal = () => {
+    setIsModalOpen(false);
+    setModalError('');
+  };
+
+  const handleSubmitOverride = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!token) return;
+
+    if (!overrideNim.trim()) {
+      setModalError('NIM/NIP wajib diisi');
+      return;
+    }
+    if (!overrideKeterangan.trim()) {
+      setModalError('Keterangan / Catatan wajib diisi');
+      return;
+    }
+
+    setIsSubmittingOverride(true);
+    setModalError('');
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/attendance/override`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          nim_nip: overrideNim.trim(),
+          tanggal: overrideDate,
+          status: overrideStatus,
+          keterangan: overrideKeterangan.trim(),
+        }),
+      });
+
+      const payload = await response.json().catch(() => null);
+
+      if (response.status === 401) {
+        handleUnauthorized();
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(payload?.message || 'Gagal menyimpan data override.');
+      }
+
+      setIsModalOpen(false);
+      void fetchRecords();
+    } catch (err) {
+      setModalError(err instanceof Error ? err.message : 'Gagal memproses override presensi.');
+    } finally {
+      setIsSubmittingOverride(false);
+    }
   };
 
   return (
@@ -340,7 +479,7 @@ export default function Records() {
 
           <h1 className="page-title gradient-text">Riwayat Absensi</h1>
           <p className="page-subtitle">
-            Kelola catatan absensi dari server, cari data berdasarkan nama atau ID, lalu ekspor laporan CSV saat dibutuhkan.
+            Kelola catatan absensi dari server, filter berdasarkan rentang tanggal, lakukan override status kehadiran manual, dan ekspor laporan Excel.
           </p>
           {adminName && (
             <p className="text-sm text-slate-400">
@@ -350,6 +489,14 @@ export default function Records() {
         </div>
 
         <div className="flex flex-col gap-3 sm:flex-row">
+          <button
+            onClick={() => handleOpenOverrideModal()}
+            className="btn-primary w-full sm:w-auto bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500"
+          >
+            <Plus size={18} />
+            Absen Manual
+          </button>
+
           <button
             onClick={() => void fetchRecords()}
             className="btn-secondary w-full sm:w-auto"
@@ -365,7 +512,7 @@ export default function Records() {
             disabled={!records.length || isExporting}
           >
             <Download size={18} />
-            {isExporting ? 'Mengekspor...' : 'Ekspor CSV'}
+            {isExporting ? 'Mengekspor...' : 'Ekspor Excel'}
           </button>
 
           <button onClick={handleLogout} className="btn-secondary w-full sm:w-auto">
@@ -399,16 +546,28 @@ export default function Records() {
 
             <div className="space-y-2">
               <label
-                htmlFor="filter-date"
                 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.24em] text-slate-500"
               >
-                <Calendar size={14} /> Tanggal
+                <Calendar size={14} /> Tanggal Mulai
               </label>
               <input
-                id="filter-date"
                 type="date"
-                value={filterDate}
-                onChange={(event) => setFilterDate(event.target.value)}
+                value={filterStartDate}
+                onChange={(event) => setFilterStartDate(event.target.value)}
+                className="input-base [color-scheme:dark]"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label
+                className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.24em] text-slate-500"
+              >
+                <Calendar size={14} /> Tanggal Selesai
+              </label>
+              <input
+                type="date"
+                value={filterEndDate}
+                onChange={(event) => setFilterEndDate(event.target.value)}
                 className="input-base [color-scheme:dark]"
               />
             </div>
@@ -416,7 +575,7 @@ export default function Records() {
             <button
               onClick={handleResetFilters}
               className="btn-secondary w-full"
-              disabled={!searchTerm && !filterDate}
+              disabled={!searchTerm && !filterStartDate && !filterEndDate}
             >
               Reset Filter
             </button>
@@ -456,17 +615,18 @@ export default function Records() {
               <div className="rounded-2xl border border-dashed border-white/10 bg-slate-950/30 p-8 text-center">
                 <p className="text-lg font-semibold text-slate-200">Belum ada data yang cocok</p>
                 <p className="mt-2 text-sm leading-6 text-slate-400">
-                  Coba ubah kata kunci pencarian atau pilih tanggal lain untuk melihat catatan absensi.
+                  Coba ubah kata kunci pencarian atau pilih rentang tanggal lain untuk melihat catatan absensi.
                 </p>
               </div>
             </div>
           ) : (
             <>
+              {/* Mobile View */}
               <div className="grid gap-4 p-4 md:hidden">
                 <AnimatePresence>
                   {filteredRecords.map((record, index) => (
                     <motion.article
-                      key={`${record.timestamp}-${record.id}`}
+                      key={`${record.timestamp}-${record.id}-${record.nim_nip}`}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
@@ -496,14 +656,28 @@ export default function Records() {
                           <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Waktu</p>
                           <p className="mt-1 text-slate-200">{formatTime(record.timestamp)}</p>
                         </div>
+                        <div className="col-span-2">
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Keterangan</p>
+                          <p className="mt-1 text-slate-200">{record.keterangan || '-'}</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex justify-end gap-2 border-t border-white/5 pt-3">
+                        <button
+                          onClick={() => handleOpenOverrideModal(record)}
+                          className="btn-secondary py-1 px-3 text-xs flex items-center gap-1 border-blue-500/30 text-blue-300 hover:bg-blue-500/10"
+                        >
+                          <Edit2 size={12} /> Override
+                        </button>
                       </div>
                     </motion.article>
                   ))}
                 </AnimatePresence>
               </div>
 
+              {/* Desktop View */}
               <div className="hidden overflow-x-auto md:block">
-                <table className="w-full min-w-[820px] text-left">
+                <table className="w-full min-w-[920px] text-left">
                   <thead className="bg-white/5 text-xs uppercase tracking-[0.24em] text-slate-500">
                     <tr>
                       <th className="px-6 py-4 font-semibold">Pengguna</th>
@@ -511,14 +685,16 @@ export default function Records() {
                       <th className="px-6 py-4 font-semibold">Tanggal</th>
                       <th className="px-6 py-4 font-semibold">Waktu</th>
                       <th className="px-6 py-4 font-semibold">Skor</th>
+                      <th className="px-6 py-4 font-semibold">Keterangan</th>
                       <th className="px-6 py-4 text-right font-semibold">Status</th>
+                      <th className="px-6 py-4 text-center font-semibold">Aksi</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
                     <AnimatePresence mode="popLayout">
                       {filteredRecords.map((record, index) => (
                         <motion.tr
-                          key={`${record.timestamp}-${record.id}`}
+                          key={`${record.timestamp}-${record.id}-${record.nim_nip}`}
                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, scale: 0.98 }}
@@ -542,7 +718,10 @@ export default function Records() {
                           <td className="px-6 py-4 text-sm text-slate-400">{formatDate(record.date)}</td>
                           <td className="px-6 py-4 text-sm text-slate-200">{formatTime(record.timestamp)}</td>
                           <td className="px-6 py-4 text-sm text-slate-400">
-                            {(record.score * 100).toFixed(1)}%
+                            {record.score === 1 ? 'Manual' : `${(record.score * 100).toFixed(1)}%`}
+                          </td>
+                          <td className="px-6 py-4 text-sm text-slate-400 max-w-[150px] truncate" title={record.keterangan}>
+                            {record.keterangan || '-'}
                           </td>
                           <td className="px-6 py-4 text-right">
                             <span
@@ -550,6 +729,15 @@ export default function Records() {
                             >
                               {record.status}
                             </span>
+                          </td>
+                          <td className="px-6 py-4 text-center">
+                            <button
+                              onClick={() => handleOpenOverrideModal(record)}
+                              className="text-blue-400 hover:text-blue-300 p-1.5 rounded-full hover:bg-white/5 transition-colors inline-flex"
+                              title="Override Status"
+                            >
+                              <Edit2 size={16} />
+                            </button>
                           </td>
                         </motion.tr>
                       ))}
@@ -562,8 +750,122 @@ export default function Records() {
         </section>
       </section>
 
+      {/* Manual Override Form Modal */}
+      <AnimatePresence>
+        {isModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="glass-card w-full max-w-md overflow-hidden shadow-2xl border border-white/10"
+            >
+              <div className="p-6 border-b border-white/10 flex justify-between items-center bg-slate-950/45">
+                <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+                  <ShieldCheck className="text-blue-400" />
+                  {modalMode === 'edit' ? 'Override Status Presensi' : 'Input Absen Manual'}
+                </h3>
+                <button
+                  type="button"
+                  onClick={handleCloseOverrideModal}
+                  className="text-slate-400 hover:text-slate-200 text-sm font-semibold transition-colors"
+                >
+                  Batal
+                </button>
+              </div>
+
+              <form onSubmit={(e) => void handleSubmitOverride(e)} className="p-6 space-y-4">
+                {modalError && (
+                  <div className="p-3 rounded-xl border border-red-500/20 bg-red-500/10 text-red-300 text-xs leading-relaxed">
+                    {modalError}
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    NIM / NIP Siswa
+                  </label>
+                  <input
+                    type="text"
+                    value={overrideNim}
+                    onChange={(e) => setOverrideNim(e.target.value)}
+                    placeholder="Masukkan NIM/NIP lengkap (contoh: 22123456)"
+                    disabled={modalMode === 'edit'}
+                    className="input-base disabled:opacity-60 disabled:cursor-not-allowed"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    Tanggal Presensi
+                  </label>
+                  <input
+                    type="date"
+                    value={overrideDate}
+                    onChange={(e) => setOverrideDate(e.target.value)}
+                    disabled={modalMode === 'edit'}
+                    className="input-base [color-scheme:dark] disabled:opacity-60 disabled:cursor-not-allowed"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    Status Presensi
+                  </label>
+                  <select
+                    value={overrideStatus}
+                    onChange={(e) => setOverrideStatus(e.target.value)}
+                    className="input-base [color-scheme:dark]"
+                    required
+                  >
+                    <option value="HADIR">HADIR (Hadir Manual)</option>
+                    <option value="SAKIT">SAKIT (Sakit)</option>
+                    <option value="IZIN">IZIN (Izin)</option>
+                    <option value="ALPHA">ALPHA (Alpha)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    Keterangan / Catatan
+                  </label>
+                  <textarea
+                    value={overrideKeterangan}
+                    onChange={(e) => setOverrideKeterangan(e.target.value)}
+                    placeholder="Contoh: Surat dokter sakit demam, Izin dispensasi..."
+                    rows={3}
+                    className="input-base resize-none"
+                    required
+                  />
+                </div>
+
+                <div className="pt-4 flex gap-3">
+                  <button
+                    type="button"
+                    onClick={handleCloseOverrideModal}
+                    className="btn-secondary w-full"
+                    disabled={isSubmittingOverride}
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-primary w-full flex justify-center items-center gap-2"
+                    disabled={isSubmittingOverride}
+                  >
+                    {isSubmittingOverride ? 'Menyimpan...' : 'Simpan'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Floating Toast Notification Container */}
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 max-w-sm w-full">
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 max-w-sm w-full font-sans">
         <AnimatePresence>
           {toasts.map((toast) => (
             <motion.div

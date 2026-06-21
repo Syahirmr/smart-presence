@@ -34,6 +34,7 @@ export function getAdminAttendanceLogs(input: GetAdminAttendanceLogsInput) {
     confidence_score: row.confidence_score,
     status: row.status,
     kiosk_id: row.kiosk_id,
+    keterangan: row.keterangan,
     user: {
       id: row.user_id,
       nim_nip: row.nim_nip,

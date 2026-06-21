@@ -7,7 +7,7 @@ import {
 import type { AttendanceBody } from './attendance.schema.js';
 
 // Threshold Euclidean Distance (lebih kecil = lebih mirip). Default face-api adalah 0.6
-const SIMILARITY_THRESHOLD = 0.70;
+const SIMILARITY_THRESHOLD = 0.73;
 const COOLDOWN_MINUTES = 60;
 
 function euclideanDistance(vecA: number[], vecB: number[]): number {

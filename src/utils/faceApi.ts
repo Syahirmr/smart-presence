@@ -3,15 +3,39 @@ import * as faceapi from '@vladmandic/face-api';
 const MODEL_URL = '/models';
 
 export const loadModels = async () => {
+    const originalFetch = window.fetch;
+
+    window.fetch = async (input, init) => {
+        const url = typeof input === 'string' ? input : (input as Request).url;
+
+        if (url.includes('/models/')) {
+            const cache = await caches.open('face-api-models-cache');
+            const cachedResponse = await cache.match(url);
+
+            if (cachedResponse) {
+                return cachedResponse;
+            }
+
+            const response = await originalFetch(input, init);
+
+            if (response.status === 200) {
+                await cache.put(url, response.clone());
+            }
+            return response;
+        }
+
+        return originalFetch(input, init);
+    };
+
     try {
         await Promise.all([
             faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
             faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
             faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
         ]);
-        console.log('Models loaded successfully');
     } catch (error) {
-        console.error('Error loading models:', error);
+    } finally {
+        window.fetch = originalFetch;
     }
 };
 

@@ -10,6 +10,7 @@ export type AttendanceLogRow = {
   waktu_hadir: string;
   confidence_score: number;
   status: string;
+  keterangan: string | null;
   created_at: string;
 };
 
@@ -18,6 +19,9 @@ let getAttendanceLogsByDateStmt: Database.Statement | null = null;
 let getAttendanceLogsByRangeStmt: Database.Statement | null = null;
 let getAttendanceLogsForExportByDateStmt: Database.Statement | null = null;
 let getAttendanceLogsForExportByRangeStmt: Database.Statement | null = null;
+let getAttendanceLogByUserAndDateStmt: Database.Statement | null = null;
+let insertManualAttendanceStmt: Database.Statement | null = null;
+let updateManualAttendanceStmt: Database.Statement | null = null;
 
 export function initAdminAttendanceStatements() {
   if (
@@ -25,7 +29,10 @@ export function initAdminAttendanceStatements() {
     getAttendanceLogsByDateStmt &&
     getAttendanceLogsByRangeStmt &&
     getAttendanceLogsForExportByDateStmt &&
-    getAttendanceLogsForExportByRangeStmt
+    getAttendanceLogsForExportByRangeStmt &&
+    getAttendanceLogByUserAndDateStmt &&
+    insertManualAttendanceStmt &&
+    updateManualAttendanceStmt
   ) {
     return;
   }
@@ -40,6 +47,7 @@ export function initAdminAttendanceStatements() {
       a.waktu_hadir,
       a.confidence_score,
       a.status,
+      a.keterangan,
       a.created_at
     FROM attendance_logs a
     JOIN users u ON u.id = a.user_id
@@ -57,6 +65,7 @@ export function initAdminAttendanceStatements() {
       a.waktu_hadir,
       a.confidence_score,
       a.status,
+      a.keterangan,
       a.created_at
     FROM attendance_logs a
     JOIN users u ON u.id = a.user_id
@@ -75,6 +84,7 @@ export function initAdminAttendanceStatements() {
       a.waktu_hadir,
       a.confidence_score,
       a.status,
+      a.keterangan,
       a.created_at
     FROM attendance_logs a
     JOIN users u ON u.id = a.user_id
@@ -93,6 +103,7 @@ export function initAdminAttendanceStatements() {
       a.waktu_hadir,
       a.confidence_score,
       a.status,
+      a.keterangan,
       a.created_at
     FROM attendance_logs a
     JOIN users u ON u.id = a.user_id
@@ -110,11 +121,29 @@ export function initAdminAttendanceStatements() {
       a.waktu_hadir,
       a.confidence_score,
       a.status,
+      a.keterangan,
       a.created_at
     FROM attendance_logs a
     JOIN users u ON u.id = a.user_id
     WHERE date(a.waktu_hadir) BETWEEN ? AND ?
     ORDER BY a.waktu_hadir DESC
+  `);
+
+  getAttendanceLogByUserAndDateStmt = db.prepare(`
+    SELECT id FROM attendance_logs
+    WHERE user_id = ? AND date(waktu_hadir) = ?
+    LIMIT 1
+  `);
+
+  insertManualAttendanceStmt = db.prepare(`
+    INSERT INTO attendance_logs (user_id, waktu_hadir, confidence_score, status, kiosk_id, keterangan)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  updateManualAttendanceStmt = db.prepare(`
+    UPDATE attendance_logs
+    SET status = ?, keterangan = ?, waktu_hadir = ?, confidence_score = ?, kiosk_id = ?
+    WHERE id = ?
   `);
 }
 
@@ -124,7 +153,10 @@ function assertAdminAttendanceStatementsReady() {
     !getAttendanceLogsByDateStmt ||
     !getAttendanceLogsByRangeStmt ||
     !getAttendanceLogsForExportByDateStmt ||
-    !getAttendanceLogsForExportByRangeStmt
+    !getAttendanceLogsForExportByRangeStmt ||
+    !getAttendanceLogByUserAndDateStmt ||
+    !insertManualAttendanceStmt ||
+    !updateManualAttendanceStmt
   ) {
     throw new Error('Admin attendance statements are not initialized');
   }
@@ -160,4 +192,29 @@ export function getAttendanceLogsForExportByRange(
 ): AttendanceLogRow[] {
   assertAdminAttendanceStatementsReady();
   return getAttendanceLogsForExportByRangeStmt!.all(startDate, endDate) as AttendanceLogRow[];
+}
+
+export function getAttendanceLogByUserAndDate(userId: string, dateStr: string): { id: number } | undefined {
+  assertAdminAttendanceStatementsReady();
+  return getAttendanceLogByUserAndDateStmt!.get(userId, dateStr) as { id: number } | undefined;
+}
+
+export function insertManualAttendance(
+  userId: string,
+  waktuHadir: string,
+  status: string,
+  keterangan: string,
+): void {
+  assertAdminAttendanceStatementsReady();
+  insertManualAttendanceStmt!.run(userId, waktuHadir, 1.0, status, 'MANUAL', keterangan);
+}
+
+export function updateManualAttendance(
+  logId: number,
+  waktuHadir: string,
+  status: string,
+  keterangan: string,
+): void {
+  assertAdminAttendanceStatementsReady();
+  updateManualAttendanceStmt!.run(status, keterangan, waktuHadir, 1.0, 'MANUAL', logId);
 }
