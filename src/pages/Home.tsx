@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { ArrowRight, Camera, ClipboardList, ScanFace, ShieldCheck, UserPlus, Zap } from 'lucide-react';
+import { ArrowRight, Camera, ScanFace, ShieldCheck, UserPlus, Zap } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const cards = [
@@ -18,10 +18,10 @@ const cards = [
     color: 'from-indigo-500 to-purple-400',
   },
   {
-    title: 'Lihat Riwayat',
-    desc: 'Pantau, filter, dan ekspor catatan absensi yang sudah tersimpan.',
-    icon: ClipboardList,
-    to: '/records',
+    title: 'Area Admin',
+    desc: 'Masuk ke dashboard admin untuk melihat, memfilter, dan mengekspor riwayat absensi.',
+    icon: ShieldCheck,
+    to: '/admin/login',
     color: 'from-emerald-500 to-teal-400',
   },
 ];
@@ -34,7 +34,7 @@ const stats = [
   },
   {
     title: 'Keamanan Data',
-    value: 'Local Storage',
+    value: 'Backend Driven',
     icon: ShieldCheck,
   },
   {
@@ -65,8 +65,8 @@ const Home = () => {
             </h1>
 
             <p className="mx-auto max-w-2xl text-sm text-slate-300 sm:text-base md:text-lg">
-              Kelola registrasi wajah, pencatatan kehadiran, dan riwayat absensi dalam satu antarmuka yang rapi,
-              cepat, dan mudah digunakan di berbagai perangkat.
+              Kelola registrasi wajah, pencatatan kehadiran, dan akses admin dalam satu antarmuka yang rapi, cepat,
+              dan mudah digunakan di berbagai perangkat.
             </p>
 
             <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">

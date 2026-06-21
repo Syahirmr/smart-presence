@@ -1,12 +1,13 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import Layout from './components/Layout';
+import AdminProtectedRoute from './components/AdminProtectedRoute';
 
-// Lazy loading membuat halaman dimuat hanya saat dibuka.
 const Home = lazy(() => import('./pages/Home'));
 const Register = lazy(() => import('./pages/Register'));
 const Attendance = lazy(() => import('./pages/Attendance'));
 const Records = lazy(() => import('./pages/Records'));
+const AdminLogin = lazy(() => import('./pages/admin/AdminLogin'));
 
 function App() {
   return (
@@ -25,7 +26,20 @@ function App() {
             <Route path="/" element={<Home />} />
             <Route path="/register" element={<Register />} />
             <Route path="/attendance" element={<Attendance />} />
-            <Route path="/records" element={<Records />} />
+
+            <Route path="/admin/login" element={<AdminLogin />} />
+
+            <Route
+              path="/admin/records"
+              element={
+                <AdminProtectedRoute>
+                  <Records />
+                </AdminProtectedRoute>
+              }
+            />
+
+            <Route path="/records" element={<Navigate to="/admin/records" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
       </Layout>
