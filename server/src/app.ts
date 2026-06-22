@@ -11,6 +11,8 @@ import { attendanceRouter } from './modules/attendance/attendance.route.js';
 import { adminAuthRouter } from './modules/admin-auth/admin-auth.route.js';
 import { adminAttendanceRouter } from './modules/admin-attendance/admin-attendance.route.js';
 import { sessionRouter } from './modules/sessions/session.route.js';
+import { studentRouter } from './modules/students/student.route.js';
+import { dashboardRouter } from './modules/dashboard/dashboard.route.js';
 
 const allowedOrigins = env.CORS_ORIGIN.split(',')
   .map((origin) => origin.trim())
@@ -48,6 +50,8 @@ app.use('/api/attendance', attendanceRouter);
 app.use('/api/admin', adminAuthRouter);
 app.use('/api/admin', adminAttendanceRouter);
 app.use('/api/admin', sessionRouter);
+app.use('/api/admin/students', studentRouter);
+app.use('/api/admin/dashboard', dashboardRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

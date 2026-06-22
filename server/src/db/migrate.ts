@@ -62,6 +62,15 @@ export function runMigrations() {
     const hasKeterangan = columns.some((col) => col.name === 'keterangan');
     const hasSessionId = columns.some((col) => col.name === 'session_id');
 
+    // Safe dynamic migration: add 'is_active' column to users if it does not exist
+    const usersColumns = db.pragma('table_info(users)') as { name: string }[];
+    const hasIsActive = usersColumns.some((col) => col.name === 'is_active');
+
+    if (!hasIsActive) {
+      // 🔥 FIXED: Soft delete column
+      db.exec('ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1;');
+    }
+
     if (!hasKeterangan) {
       db.exec('ALTER TABLE attendance_logs ADD COLUMN keterangan TEXT;');
     }

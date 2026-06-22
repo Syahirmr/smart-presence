@@ -32,6 +32,7 @@ export function initAttendanceStatements() {
     SELECT u.id, u.nim_nip, u.nama_lengkap, f.embedding_data
     FROM users u
     JOIN face_embeddings f ON u.id = f.user_id
+    WHERE u.is_active = 1
   `);
 
   // 2. Cek Anti-Dobel dalam Sesi yang Sama
