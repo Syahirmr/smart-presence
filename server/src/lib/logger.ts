@@ -4,7 +4,7 @@ import path from 'node:path';
 import pino from 'pino';
 import { env } from '../config/env.js';
 
-const logsDir = path.resolve(process.cwd(), 'logs');
+const logsDir = path.resolve(process.cwd(), 'data/logs');
 if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
 }

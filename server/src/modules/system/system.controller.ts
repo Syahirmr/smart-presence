@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { db, getDbPath } from '../../db/sqlite.js';
 import { sendSuccess } from '../../lib/api-response.js';
 import { AppError } from '../../lib/app-error.js';
@@ -69,4 +70,26 @@ export function restoreDatabase(req: Request, res: Response) {
       process.exit(1);
     }
   }, 1000);
+}
+
+export function getSystemHealth(_req: Request, res: Response) {
+  const memoryUsage = process.memoryUsage();
+  
+  // Konversi bytes ke MB
+  const heapUsedMb = Math.round(memoryUsage.heapUsed / 1024 / 1024);
+  const heapTotalMb = Math.round(memoryUsage.heapTotal / 1024 / 1024);
+  const osFreeRamMb = Math.round(os.freemem() / 1024 / 1024);
+  const uptimeSeconds = Math.round(process.uptime());
+
+  return sendSuccess(res, {
+    statusCode: 200,
+    code: 'SYSTEM_HEALTH_OK',
+    message: 'Status kesehatan sistem berhasil diambil',
+    data: {
+      uptime_seconds: uptimeSeconds,
+      heap_used_mb: heapUsedMb,
+      heap_total_mb: heapTotalMb,
+      os_free_ram_mb: osFreeRamMb,
+    },
+  });
 }

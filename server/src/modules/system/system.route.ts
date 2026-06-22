@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import path from 'node:path';
 import { requireAdminAuth } from '../../middlewares/require-admin-auth.js';
-import { backupDatabase, restoreDatabase } from './system.controller.js';
+import { backupDatabase, restoreDatabase, getSystemHealth } from './system.controller.js';
 
 export const systemRouter = Router();
 
@@ -21,5 +21,6 @@ const upload = multer({
 
 systemRouter.use(requireAdminAuth);
 
+systemRouter.get('/health', getSystemHealth);
 systemRouter.get('/backup', backupDatabase);
 systemRouter.post('/restore', upload.single('db_file'), restoreDatabase);

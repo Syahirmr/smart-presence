@@ -12,6 +12,16 @@ import { initAttendanceStatements } from './modules/attendance/attendance.reposi
 import { initEnrollmentStatements } from './modules/enrollment/enrollment.repository.js';
 import { initSocket } from './sockets/index.js';
 
+process.on('uncaughtException', (err) => {
+  logger.error({ err }, 'FATAL ERROR: Uncaught Exception! Menutup server untuk mencegah silent crash.');
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  logger.error({ err: reason }, 'FATAL ERROR: Unhandled Rejection! Menutup server untuk mencegah silent crash.');
+  process.exit(1);
+});
+
 const HOST = env.HOST;
 
 async function bootstrap() {
