@@ -46,11 +46,27 @@ export function updateStudent(id: string, nama_lengkap?: string, nim_nip?: strin
 }
 
 export function softDeleteStudent(id: string): boolean {
-  const stmt = db.prepare(`
-    UPDATE users 
-    SET is_active = 0, updated_at = CURRENT_TIMESTAMP 
-    WHERE id = ? AND is_active = 1
-  `);
-  const info = stmt.run(id);
-  return info.changes > 0;
+  // 🔥 FIXED: Gunakan transaction agar Soft Delete User dan Hard Delete Vektor bersifat Atomic
+  const transaction = db.transaction((studentId: string) => {
+    // 1. Hapus memori vektor wajah agar AI tidak menumpuk 'wajah hantu'
+    db.prepare('DELETE FROM face_embeddings WHERE user_id = ?').run(studentId);
+    
+    // 2. Soft delete data mahasiswanya
+    const stmt = db.prepare(`
+      UPDATE users 
+      SET is_active = 0, updated_at = CURRENT_TIMESTAMP 
+      WHERE id = ? AND is_active = 1
+    `);
+    const info = stmt.run(studentId);
+    
+    return info.changes > 0;
+  });
+
+  return transaction(id);
+}
+
+// 🔥 FIXED: Fitur Reset Wajah (Hard Delete vektor tanpa soft delete mahasiswanya)
+export function deleteFaceVector(id: string): void {
+  const stmt = db.prepare('DELETE FROM face_embeddings WHERE user_id = ?');
+  stmt.run(id);
 }

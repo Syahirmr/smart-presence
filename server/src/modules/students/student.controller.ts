@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 import { sendSuccess } from '../../lib/api-response.js';
 import { AppError } from '../../lib/app-error.js';
-import { getAllActiveStudents, updateStudent, softDeleteStudent } from './student.repository.js';
+import { deleteFaceVector, getAllActiveStudents, softDeleteStudent, updateStudent } from './student.repository.js';
 import { updateStudentSchema } from './student.schema.js';
 
 export function getStudents(_req: Request, res: Response) {
@@ -54,6 +54,24 @@ export function deleteStudent(req: Request, res: Response) {
     statusCode: 200,
     code: 'STUDENT_DELETED',
     message: 'Mahasiswa berhasil dihapus secara soft-delete',
+    data: { id },
+  });
+}
+
+export function resetStudentFace(req: Request, res: Response) {
+  const id = req.params.id as string;
+
+  if (!id) {
+    throw new AppError(400, 'BAD_REQUEST', 'ID mahasiswa diperlukan');
+  }
+
+  // Hapus vektor wajah (tidak throw error jika kosong, karena tujuannya memang mengosongkan)
+  deleteFaceVector(id);
+
+  return sendSuccess(res, {
+    statusCode: 200,
+    code: 'STUDENT_FACE_RESET',
+    message: 'Data vektor wajah mahasiswa berhasil dihapus untuk Re-Enrollment',
     data: { id },
   });
 }
