@@ -83,11 +83,9 @@ export async function loginAdmin(input: AdminLoginBody) {
 }
 
 export async function changeAdminPassword(
-  adminIdFromToken: string,
+  adminId: number,
   input: ChangeAdminPasswordBody,
 ) {
-  const adminId = parseAdminId(adminIdFromToken);
-
   const admin = findAdminById(adminId);
 
   if (!admin) {

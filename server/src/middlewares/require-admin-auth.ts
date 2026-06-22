@@ -32,7 +32,7 @@ export function requireAdminAuth(req: Request, _res: Response, next: NextFunctio
     }
 
     req.admin = {
-      id: decoded.sub,
+      id: Number(decoded.sub), // 🔥 FIXED: Konversi ke number
       username: decoded.username,
       role: decoded.role,
     };

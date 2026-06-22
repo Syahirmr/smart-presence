@@ -2,6 +2,7 @@ import type { Server as HttpServer } from 'node:http';
 import { Server } from 'socket.io';
 import { env } from '../config/env.js';
 import { logger } from '../lib/logger.js';
+import { registerAttendanceHandlers } from './attendance.socket.js';
 
 let io: Server | null = null;
 
@@ -23,6 +24,9 @@ export function initSocket(server: HttpServer) {
     socket.on('disconnect', () => {
       logger.debug({ socketId: socket.id }, 'Admin Dashboard disconnected');
     });
+
+    // Register module-specific socket handlers
+    registerAttendanceHandlers(socket);
   });
 
   logger.info('WebSocket server initialized');

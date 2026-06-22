@@ -1,14 +1,15 @@
 import { getSocketInstance } from '../../sockets/index.js';
+import { AppError } from '../../lib/app-error.js';
 import {
   getAllUserEmbeddings,
-  hasRecentAttendance,
+  hasSessionAttendance,
   insertAttendanceLog,
+  getActiveSession,
 } from './attendance.repository.js';
 import type { AttendanceBody } from './attendance.schema.js';
 
 // Threshold Euclidean Distance (lebih kecil = lebih mirip). Default face-api adalah 0.6
 const SIMILARITY_THRESHOLD = 0.73;
-const COOLDOWN_MINUTES = 60;
 
 function euclideanDistance(vecA: number[], vecB: number[]): number {
   if (vecA.length !== vecB.length) return 999;
@@ -33,6 +34,11 @@ export function processAttendance(input: AttendanceBody) {
 
   const now = new Date();
   const nowIso = now.toISOString();
+
+  const activeSession = getActiveSession();
+  if (!activeSession) {
+    throw new AppError(400, 'NO_ACTIVE_SESSION', 'Tidak ada sesi kelas yang sedang aktif saat ini. Presensi ditolak.');
+  }
 
   const allEmbeddings = getAllUserEmbeddings();
 
@@ -65,9 +71,6 @@ export function processAttendance(input: AttendanceBody) {
       continue;
     }
   }
-
-  const cooldownThreshold = new Date(now.getTime() - COOLDOWN_MINUTES * 60 * 1000);
-  const thresholdTimeIso = cooldownThreshold.toISOString();
 
   const results = [];
   const acceptedUserIdsInRequest = new Set<string>();
@@ -112,7 +115,7 @@ export function processAttendance(input: AttendanceBody) {
       continue;
     }
 
-    const isDuplicateDb = hasRecentAttendance(bestMatchUser.id, thresholdTimeIso);
+    const isDuplicateDb = hasSessionAttendance(bestMatchUser.id, activeSession.id);
 
     if (isDuplicateDb) {
       results.push({
@@ -127,6 +130,7 @@ export function processAttendance(input: AttendanceBody) {
 
     insertAttendanceLog({
       userId: bestMatchUser.id,
+      sessionId: activeSession.id,
       waktuHadir: nowIso,
       confidenceScore,
       status: 'HADIR',

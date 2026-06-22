@@ -20,18 +20,6 @@ export function runMigrations() {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
 
-      CREATE TABLE IF NOT EXISTS attendance_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id TEXT NOT NULL,
-        waktu_hadir TEXT NOT NULL, 
-        confidence_score REAL NOT NULL,
-        status TEXT NOT NULL,
-        kiosk_id TEXT NOT NULL, -- 🔥 FIXED: Udah sinkron sama payload Kiosk
-        keterangan TEXT,
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-      );
-
       CREATE TABLE IF NOT EXISTS admins (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT NOT NULL UNIQUE,
@@ -39,19 +27,57 @@ export function runMigrations() {
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
 
+      CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        nama_matkul TEXT NOT NULL,
+        waktu_mulai TEXT NOT NULL,
+        waktu_selesai TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'scheduled',
+        admin_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (admin_id) REFERENCES admins(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS attendance_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        waktu_hadir TEXT NOT NULL, 
+        confidence_score REAL NOT NULL,
+        status TEXT NOT NULL,
+        kiosk_id TEXT NOT NULL, -- 🔥 FIXED: Udah sinkron sama payload Kiosk
+        keterangan TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      );
+
       -- Indexing standar
       CREATE INDEX IF NOT EXISTS idx_face_embeddings_user_id ON face_embeddings(user_id);
-      
-      -- 🔥 FIXED: Composite index maut buat optimasi query Anti-Dobel 60 menit
-      CREATE INDEX IF NOT EXISTS idx_attendance_logs_cooldown ON attendance_logs(user_id, waktu_hadir DESC);
     `);
 
-    // Safe dynamic migration: add 'keterangan' column if it does not exist
+    // Safe dynamic migration: add 'keterangan' and 'session_id' columns if they do not exist
     const columns = db.pragma('table_info(attendance_logs)') as { name: string }[];
     const hasKeterangan = columns.some((col) => col.name === 'keterangan');
+    const hasSessionId = columns.some((col) => col.name === 'session_id');
+
     if (!hasKeterangan) {
       db.exec('ALTER TABLE attendance_logs ADD COLUMN keterangan TEXT;');
     }
+    
+    if (!hasSessionId) {
+      // 🔥 FIXED: Tambahkan kolom session_id jika belum ada tanpa menghancurkan data lama
+      db.exec("ALTER TABLE attendance_logs ADD COLUMN session_id TEXT NOT NULL DEFAULT 'default-session';");
+    }
+
+    // Buat composite index SETELAH memastikan kolom session_id benar-benar ada
+    db.exec(`
+      -- 🔥 FIXED: Composite index maut buat optimasi query Anti-Dobel dalam Sesi
+      CREATE INDEX IF NOT EXISTS idx_attendance_logs_session_user ON attendance_logs(session_id, user_id);
+    `);
+
+
 
     logger.info('SQLite migrations completed');
   } catch (error) {
