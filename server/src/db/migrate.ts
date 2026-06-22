@@ -55,6 +55,19 @@ export function runMigrations() {
 
       -- Indexing standar
       CREATE INDEX IF NOT EXISTS idx_face_embeddings_user_id ON face_embeddings(user_id);
+
+      -- 🔥 FIXED: Tabel Config/Settings
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+    `);
+
+    // 🔥 FIXED: Nilai default settings
+    db.exec(`
+      INSERT OR IGNORE INTO settings (key, value) 
+      VALUES ('kampus_name', 'Universitas Brawijaya'), 
+             ('kiosk_password', 'admin123');
     `);
 
     // Safe dynamic migration: add 'keterangan' and 'session_id' columns if they do not exist
