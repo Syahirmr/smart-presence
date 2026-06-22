@@ -6,10 +6,8 @@ import {
   insertAttendanceLog,
   getActiveSession,
 } from './attendance.repository.js';
+import { getAllSettings } from '../settings/setting.repository.js';
 import type { AttendanceBody } from './attendance.schema.js';
-
-// Threshold Euclidean Distance (lebih kecil = lebih mirip). Default face-api adalah 0.6
-const SIMILARITY_THRESHOLD = 0.73;
 
 function euclideanDistance(vecA: number[], vecB: number[]): number {
   if (vecA.length !== vecB.length) return 999;
@@ -44,6 +42,9 @@ export function processAttendance(input: AttendanceBody) {
   if (input.session_id !== activeSession.id) {
     throw new AppError(400, 'SESSION_MISMATCH', 'ID Sesi Kiosk tidak valid atau sudah kadaluarsa');
   }
+
+  // 🔥 FIXED: Tarik threshold dari database secara dinamis
+  const threshold = parseFloat(getAllSettings()['ai_threshold'] || '0.85');
 
   const allEmbeddings = getAllUserEmbeddings();
 
@@ -102,7 +103,7 @@ export function processAttendance(input: AttendanceBody) {
       }
     }
 
-    if (bestScore > SIMILARITY_THRESHOLD || !bestMatchUser) {
+    if (bestScore > threshold || !bestMatchUser) {
       results.push({
         status: 'UNKNOWN',
         user: null,

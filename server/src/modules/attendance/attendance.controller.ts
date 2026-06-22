@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { sendSuccess } from '../../lib/api-response.js';
 import { AppError } from '../../lib/app-error.js';
 import { getActiveSession } from './attendance.repository.js';
+import { getAllSettings } from '../settings/setting.repository.js';
 import { attendanceBodySchema } from './attendance.schema.js';
 import { processAttendance } from './attendance.service.js';
 
@@ -12,11 +13,17 @@ export function getActiveSessionPublic(req: Request, res: Response) {
     throw new AppError(404, 'NO_ACTIVE_SESSION', 'Tidak ada sesi aktif saat ini');
   }
 
+  // 🔥 FIXED: Berikan nilai threshold ke Kiosk lewat API agar tersinkronisasi
+  const threshold = parseFloat(getAllSettings()['ai_threshold'] || '0.85');
+
   return sendSuccess(res, {
     statusCode: 200,
     code: 'ACTIVE_SESSION_FOUND',
     message: 'Sesi aktif berhasil diambil',
-    data: session,
+    data: {
+      ...session,
+      ai_threshold: threshold
+    },
   });
 }
 
