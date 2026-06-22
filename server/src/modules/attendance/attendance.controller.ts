@@ -13,8 +13,11 @@ export function getActiveSessionPublic(req: Request, res: Response) {
     throw new AppError(404, 'NO_ACTIVE_SESSION', 'Tidak ada sesi aktif saat ini');
   }
 
-  // 🔥 FIXED: Berikan nilai threshold ke Kiosk lewat API agar tersinkronisasi
-  const threshold = parseFloat(getAllSettings()['ai_threshold'] || '0.85');
+  // 🔥 FIXED: Berikan nilai threshold dan image filter ke Kiosk lewat API agar tersinkronisasi
+  const settings = getAllSettings();
+  const threshold = parseFloat(settings['ai_threshold'] || '0.85');
+  const brightness = parseFloat(settings['ai_brightness'] || '1.0');
+  const contrast = parseFloat(settings['ai_contrast'] || '1.0');
 
   return sendSuccess(res, {
     statusCode: 200,
@@ -22,7 +25,9 @@ export function getActiveSessionPublic(req: Request, res: Response) {
     message: 'Sesi aktif berhasil diambil',
     data: {
       ...session,
-      ai_threshold: threshold
+      ai_threshold: threshold,
+      ai_brightness: brightness,
+      ai_contrast: contrast
     },
   });
 }

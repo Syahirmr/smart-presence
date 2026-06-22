@@ -103,7 +103,14 @@ async function runTests() {
   if (!activeSessionRes.ok) throw new Error('Gagal mengambil sesi aktif!');
   const activeSessionData = await activeSessionRes.json();
   const kioskSessionId = activeSessionData.data.id;
+  
+  // 🔥 FIXED: Assertion Parameter AI
+  if (!activeSessionData.data.ai_threshold || !activeSessionData.data.ai_brightness || !activeSessionData.data.ai_contrast) {
+    throw new Error('Parameter AI dinamis tidak ditemukan di response API!');
+  }
+  
   console.log('✅ Kiosk berhasil mendapatkan ID Sesi:', kioskSessionId);
+  console.log(`✅ Parameter AI Kiosk -> Threshold: ${activeSessionData.data.ai_threshold}, Brightness: ${activeSessionData.data.ai_brightness}, Contrast: ${activeSessionData.data.ai_contrast}`);
 
   // 4. [Test WebSocket - Success]: Emit Event Presensi saat sesi aktif
   console.log('\n⏳ 4. Test WebSocket (Sesi Aktif) - Mencoba emit presensi...');

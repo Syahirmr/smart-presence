@@ -68,7 +68,9 @@ export function runMigrations() {
       INSERT OR IGNORE INTO settings (key, value) 
       VALUES ('kampus_name', 'Universitas Brawijaya'), 
              ('kiosk_password', 'admin123'),
-             ('ai_threshold', '0.85');
+             ('ai_threshold', '0.85'),
+             ('ai_brightness', '1.0'),
+             ('ai_contrast', '1.0');
     `);
 
     // Safe dynamic migration: add 'keterangan' and 'session_id' columns if they do not exist
