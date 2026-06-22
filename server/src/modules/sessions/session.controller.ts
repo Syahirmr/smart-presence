@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { sendSuccess } from '../../lib/api-response.js';
 import { AppError } from '../../lib/app-error.js';
+import { getSocketInstance } from '../../sockets/index.js';
 import { createSession, getAllSessions, updateSessionStatus } from './session.repository.js';
 import { createSessionSchema, updateSessionStatusSchema } from './session.schema.js';
 
@@ -50,6 +51,15 @@ export function patchSessionStatus(req: Request, res: Response) {
 
   if (!updated) {
     throw new AppError(404, 'NOT_FOUND', 'Sesi tidak ditemukan');
+  }
+
+  // 🔥 FIXED: Beritahu semua client (termasuk Kiosk) bahwa status sesi berubah
+  const io = getSocketInstance();
+  if (io) {
+    io.emit('session_changed', { 
+      sessionId: body.status === 'active' ? id : null,
+      status: body.status
+    });
   }
 
   return sendSuccess(res, {

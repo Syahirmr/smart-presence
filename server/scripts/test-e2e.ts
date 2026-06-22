@@ -97,6 +97,14 @@ async function runTests() {
     process.exit(1);
   }
 
+  // 3.5 [Test Public API]: Kiosk fetch active session
+  console.log('\n⏳ 3.5. Kiosk mengambil sesi aktif...');
+  const activeSessionRes = await fetch(`${API_URL}/api/attendance/active-session`);
+  if (!activeSessionRes.ok) throw new Error('Gagal mengambil sesi aktif!');
+  const activeSessionData = await activeSessionRes.json();
+  const kioskSessionId = activeSessionData.data.id;
+  console.log('✅ Kiosk berhasil mendapatkan ID Sesi:', kioskSessionId);
+
   // 4. [Test WebSocket - Success]: Emit Event Presensi saat sesi aktif
   console.log('\n⏳ 4. Test WebSocket (Sesi Aktif) - Mencoba emit presensi...');
   const socket: Socket = io(API_URL);
@@ -122,6 +130,7 @@ async function runTests() {
       // Emit event seperti Kiosk/Kamera
       socket.emit('process_attendance', {
         kiosk_id: 'TEST_KIOSK_1',
+        session_id: kioskSessionId, // 🔥 Payload Frontend udah bawa session_id!
         faces: [{ embedding: dummyEmbedding }]
       });
     });
@@ -135,8 +144,52 @@ async function runTests() {
   // Tunggu sebentar agar stabil sebelum test berikutnya
   await delay(1000);
 
+  // 4.5 [Test WebSocket - Spoofing Fail]: Coba emit dengan session_id palsu
+  console.log('\n⏳ 4.5. Test WebSocket (Spoofing Fail) - Emit presensi dengan ID sesi palsu...');
+  
+  // 🔥 FIXED: Bersihkan sisa listener dari test sebelumnya
+  socket.removeAllListeners('attendance_success');
+  socket.removeAllListeners('attendance_error');
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      socket.once('attendance_success', () => {
+        console.error('❌ Test WebSocket - Spoofing Fail: GAGAL! Seharusnya ditolak karena ID sesi palsu.');
+        reject(new Error('Test spoofing gagal: Server menerima ID sesi bodong'));
+      });
+
+      socket.once('attendance_error', (err) => {
+        if (err.code === 'SESSION_MISMATCH') {
+          console.log('✅ Test WebSocket - Spoofing Fail Sukses: Server menolak absensi dengan pesan:', err.message);
+          resolve();
+        } else {
+          console.error('❌ Test WebSocket - Spoofing Fail: Server mengembalikan error lain:', err);
+          reject(new Error(err.message));
+        }
+      });
+
+      socket.emit('process_attendance', {
+        kiosk_id: 'TEST_KIOSK_1',
+        session_id: 'SESI-BODONG-123',
+        faces: [{ embedding: dummyEmbedding }]
+      });
+    });
+  } catch (error) {
+    console.error('❌ Test Sesi 4.5 Gagal:', error);
+    socket.disconnect();
+    process.exit(1);
+  }
+
+  // Tunggu sebentar lagi sebelum mematikan sesi
+  await delay(1000);
+
   // 5. [Test WebSocket - Fail]: Ubah sesi jadi 'completed', lalu absen lagi
   console.log('\n⏳ 5. Test WebSocket (Sesi Non-Aktif)...');
+
+  // 🔥 FIXED: Bersihkan sisa listener dari test sebelumnya
+  socket.removeAllListeners('attendance_success');
+  socket.removeAllListeners('attendance_error');
+
   try {
     console.log('   Mematikan sesi (update status -> completed)...');
     await fetch(`${API_URL}/api/admin/sessions/${currentSessionId}/status`, {
@@ -167,6 +220,7 @@ async function runTests() {
 
       socket.emit('process_attendance', {
         kiosk_id: 'TEST_KIOSK_1',
+        session_id: currentSessionId, // Sengaja ngirim sesi yang udah dimatiin
         faces: [{ embedding: dummyEmbedding }]
       });
     });

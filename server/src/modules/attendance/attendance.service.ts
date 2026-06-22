@@ -40,6 +40,11 @@ export function processAttendance(input: AttendanceBody) {
     throw new AppError(400, 'NO_ACTIVE_SESSION', 'Tidak ada sesi kelas yang sedang aktif saat ini. Presensi ditolak.');
   }
 
+  // 🔥 FIXED: Double Check - Pastikan sesi yang dikirim Kiosk beneran sama dengan sesi yang aktif di DB
+  if (input.session_id !== activeSession.id) {
+    throw new AppError(400, 'SESSION_MISMATCH', 'ID Sesi Kiosk tidak valid atau sudah kadaluarsa');
+  }
+
   const allEmbeddings = getAllUserEmbeddings();
 
   const userEmbeddingsMap = new Map<
