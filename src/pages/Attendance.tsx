@@ -52,12 +52,16 @@ export default function Attendance() {
   const isProcessingRef = useRef(false);
   const resetTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
 
+  const [sessionState, setSessionState] = useState<'setup' | 'active'>('setup');
+  const [classNameInput, setClassNameInput] = useState('');
   const [status, setStatus] = useState<AttendanceStatus>('loading');
   const [message, setMessage] = useState('Menyiapkan sistem...');
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [lastMarked, setLastMarked] = useState<LastMarkedAttendance | null>(null);
 
   useEffect(() => {
+    if (sessionState !== 'active') return;
+
     let isMounted = true;
 
     const initializeCamera = async () => {
@@ -105,7 +109,7 @@ export default function Attendance() {
         videoRef.current.srcObject = null;
       }
     };
-  }, []);
+  }, [sessionState]);
 
   useEffect(() => {
     if (status !== 'idle' || !isCameraReady) return;
@@ -228,13 +232,77 @@ export default function Attendance() {
     };
   }, [status, isCameraReady]);
 
+  if (sessionState === 'setup') {
+    return (
+      <div className="page-shell flex items-center justify-center min-h-[80vh]">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="glass-card w-full max-w-md p-8 shadow-2xl relative overflow-hidden"
+        >
+          <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-blue-500/10 blur-[80px]" />
+          
+          <div className="mb-8 text-center relative z-10">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 text-blue-400 ring-1 ring-blue-500/30">
+              <Camera size={32} />
+            </div>
+            <h1 className="text-2xl font-bold text-slate-100">Mulai Sesi Kiosk</h1>
+            <p className="mt-2 text-sm text-slate-400">
+              Atur detail sesi sebelum menyalakan kamera dan AI Face Recognition.
+            </p>
+          </div>
+
+          <form 
+            onSubmit={(e) => { e.preventDefault(); setSessionState('active'); }}
+            className="space-y-6 relative z-10"
+          >
+            <div className="space-y-2">
+              <label htmlFor="class-name" className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                Mata Kuliah / Nama Sesi
+              </label>
+              <input
+                id="class-name"
+                type="text"
+                required
+                value={classNameInput}
+                onChange={(e) => setClassNameInput(e.target.value)}
+                placeholder="Contoh: Pemrograman Web (A)"
+                className="w-full rounded-xl border border-white/10 bg-slate-900/50 px-4 py-3 text-sm text-slate-100 placeholder-slate-600 focus:border-blue-500/50 focus:bg-slate-900 focus:outline-none focus:ring-4 focus:ring-blue-500/10 transition-all"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={!classNameInput.trim()}
+              className="relative w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3.5 text-sm font-bold text-white shadow-lg shadow-blue-500/20 transition-all hover:from-blue-500 hover:to-indigo-500 hover:shadow-blue-500/30 disabled:cursor-not-allowed disabled:opacity-70 active:scale-[0.98]"
+            >
+              Nyalakan Kamera & Mulai Absensi
+            </button>
+          </form>
+        </motion.div>
+      </div>
+    );
+  }
+
   return (
     <div className="page-shell">
-      <header className="page-header">
-        <h1 className="page-title gradient-text">Ambil Absensi</h1>
-        <p className="page-subtitle">
-          Posisikan wajah Anda di dalam frame untuk pengenalan otomatis instan.
-        </p>
+      <header className="page-header flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="page-title gradient-text">Sesi: {classNameInput}</h1>
+          <p className="page-subtitle">
+            Posisikan wajah Anda di dalam frame untuk pengenalan otomatis instan.
+          </p>
+        </div>
+        <button 
+          onClick={() => {
+            setSessionState('setup');
+            setStatus('loading');
+            setIsCameraReady(false);
+          }}
+          className="btn-secondary whitespace-nowrap text-xs px-3 py-2"
+        >
+          Akhiri Sesi
+        </button>
       </header>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.1fr_0.9fr]">

@@ -8,6 +8,7 @@ const Register = lazy(() => import('./pages/Register'));
 const Attendance = lazy(() => import('./pages/Attendance'));
 const Records = lazy(() => import('./pages/Records'));
 const AdminLogin = lazy(() => import('./pages/admin/AdminLogin'));
+const Students = lazy(() => import('./pages/admin/Students'));
 
 function App() {
   return (
@@ -38,6 +39,16 @@ function App() {
               }
             />
 
+            <Route
+              path="/admin/students"
+              element={
+                <AdminProtectedRoute>
+                  <Students />
+                </AdminProtectedRoute>
+              }
+            />
+
+            <Route path="/admin" element={<Navigate to="/admin/records" replace />} />
             <Route path="/records" element={<Navigate to="/admin/records" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

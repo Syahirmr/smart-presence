@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Calendar, Download, LogOut, RefreshCw, Search, ShieldCheck, Plus, Edit2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import { Calendar, Download, LogOut, RefreshCw, Search, ShieldCheck, Plus, Edit2, FileText, Table, ChevronDown } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { useAdminAuth } from '../stores/useAdminAuth';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import AttendanceCharts from '../components/AttendanceCharts';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001/api';
 
@@ -65,6 +68,11 @@ const formatDate = (date: string) => {
   });
 };
 
+const getLocalISODate = (d = new Date()) => {
+  const offset = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - offset).toISOString().split('T')[0];
+};
+
 const getStatusBadgeClass = (status: string) => {
   if (status === 'HADIR') {
     return 'border border-emerald-500/20 bg-emerald-500/10 text-emerald-300';
@@ -117,6 +125,8 @@ export default function Records() {
   const [filterEndDate, setFilterEndDate] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
+  const [isExportDropdownOpen, setIsExportDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [toasts, setToasts] = useState<{
     id: string;
@@ -131,7 +141,7 @@ export default function Records() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
   const [overrideNim, setOverrideNim] = useState('');
-  const [overrideDate, setOverrideDate] = useState(new Date().toISOString().split('T')[0]);
+  const [overrideDate, setOverrideDate] = useState(getLocalISODate());
   const [overrideStatus, setOverrideStatus] = useState('HADIR');
   const [overrideKeterangan, setOverrideKeterangan] = useState('');
   const [modalError, setModalError] = useState('');
@@ -218,6 +228,16 @@ export default function Records() {
   useEffect(() => {
     void fetchRecords();
   }, [fetchRecords]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsExportDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // WebSocket Live Real-Time Updates
   useEffect(() => {
@@ -368,7 +388,7 @@ export default function Records() {
       const link = document.createElement('a');
 
       link.href = url;
-      link.download = `attendance_report_${filterStartDate || new Date().toISOString().split('T')[0]}.xlsx`;
+      link.download = `attendance_report_${filterStartDate || getLocalISODate()}.xlsx`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -377,6 +397,56 @@ export default function Records() {
       window.alert(
         error instanceof Error ? error.message : 'Gagal mengekspor Excel dari server.',
       );
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  
+  const handleExportPDF = () => {
+    if (filteredRecords.length === 0) {
+      window.alert('Tidak ada data untuk diekspor');
+      return;
+    }
+    
+    setIsExporting(true);
+    try {
+      const doc = new jsPDF();
+      
+      doc.setFontSize(16);
+      doc.text('Laporan Presensi Mahasiswa', 14, 20);
+      
+      doc.setFontSize(10);
+      doc.text(`Tanggal: ${filterStartDate || 'Semua'} s/d ${filterEndDate || 'Semua'}`, 14, 28);
+      doc.text(`Total Data: ${filteredRecords.length}`, 14, 34);
+
+      const tableColumn = ["Nama", "NIM/NIP", "Tanggal", "Waktu", "Status", "Keterangan"];
+      const tableRows: string[][] = [];
+
+      filteredRecords.forEach(record => {
+        const recordData = [
+          record.name,
+          record.nim_nip,
+          formatDate(record.date),
+          formatTime(record.timestamp),
+          record.status,
+          record.keterangan || '-'
+        ];
+        tableRows.push(recordData);
+      });
+
+      autoTable(doc, {
+        head: [tableColumn],
+        body: tableRows,
+        startY: 40,
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [59, 130, 246] }
+      });
+
+      doc.save(`attendance_report_${filterStartDate || getLocalISODate()}.pdf`);
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      window.alert('Gagal membuat PDF');
     } finally {
       setIsExporting(false);
     }
@@ -398,13 +468,13 @@ export default function Records() {
     if (record) {
       setModalMode('edit');
       setOverrideNim(record.nim_nip);
-      setOverrideDate(record.date || new Date().toISOString().split('T')[0]);
+      setOverrideDate(record.date || getLocalISODate());
       setOverrideStatus(record.status === 'UNKNOWN' ? 'HADIR' : record.status);
       setOverrideKeterangan(record.keterangan || '');
     } else {
       setModalMode('create');
       setOverrideNim('');
-      setOverrideDate(new Date().toISOString().split('T')[0]);
+      setOverrideDate(getLocalISODate());
       setOverrideStatus('HADIR');
       setOverrideKeterangan('');
     }
@@ -506,14 +576,52 @@ export default function Records() {
             Refresh
           </button>
 
-          <button
-            onClick={() => void handleExport()}
-            className="btn-primary w-full sm:w-auto"
-            disabled={!records.length || isExporting}
-          >
-            <Download size={18} />
-            {isExporting ? 'Mengekspor...' : 'Ekspor Excel'}
-          </button>
+          <div className="relative" ref={dropdownRef}>
+            <button
+              onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
+              className="btn-primary w-full sm:w-auto"
+              disabled={!records.length || isExporting}
+            >
+              <Download size={18} />
+              {isExporting ? 'Mengekspor...' : 'Ekspor'}
+              <ChevronDown size={14} className={`transition-transform ${isExportDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+            
+            <AnimatePresence>
+              {isExportDropdownOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute right-0 mt-2 w-48 rounded-xl border border-white/10 bg-slate-900 shadow-2xl z-50 overflow-hidden"
+                >
+                  <div className="p-1">
+                    <button
+                      onClick={() => {
+                        setIsExportDropdownOpen(false);
+                        void handleExport();
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-200 hover:bg-emerald-500/10 hover:text-emerald-400 transition-colors"
+                    >
+                      <Table size={16} />
+                      Excel (.xlsx)
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsExportDropdownOpen(false);
+                        handleExportPDF();
+                      }}
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-200 hover:bg-red-500/10 hover:text-red-400 transition-colors"
+                    >
+                      <FileText size={16} />
+                      PDF (.pdf)
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
 
           <button onClick={handleLogout} className="btn-secondary w-full sm:w-auto">
             <LogOut size={18} />
@@ -522,7 +630,22 @@ export default function Records() {
         </div>
       </header>
 
-      <section className="grid grid-cols-1 gap-6 xl:grid-cols-[320px_1fr]">
+      {/* Admin Navigation Tabs */}
+      <div className="flex space-x-1 mb-6 rounded-xl bg-slate-900/50 p-1 border border-white/5 max-w-full overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+        <button className="px-4 py-2 text-sm font-semibold rounded-lg bg-blue-500/20 text-blue-400 shadow-sm transition-all">
+          Riwayat Absensi
+        </button>
+        <button 
+          onClick={() => navigate('/admin/students')}
+          className="px-4 py-2 text-sm font-semibold rounded-lg text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-all"
+        >
+          Data Mahasiswa
+        </button>
+      </div>
+
+      <AttendanceCharts records={records} />
+
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[300px_1fr]">
         <aside className="space-y-6">
           <div className="glass-card panel-padding space-y-5">
             <h2 className="section-title">Filter Data</h2>
@@ -570,6 +693,42 @@ export default function Records() {
                 onChange={(event) => setFilterEndDate(event.target.value)}
                 className="input-base [color-scheme:dark]"
               />
+            </div>
+            <div className="flex flex-wrap gap-2 pt-2">
+              <button
+                onClick={() => {
+                  const today = getLocalISODate();
+                  setFilterStartDate(today);
+                  setFilterEndDate(today);
+                }}
+                className="btn-secondary py-1.5 px-3 text-xs flex-1 bg-slate-900/50 hover:bg-slate-800 border-white/5"
+              >
+                Hari Ini
+              </button>
+              <button
+                onClick={() => {
+                  const yesterday = new Date();
+                  yesterday.setDate(yesterday.getDate() - 1);
+                  const dateStr = getLocalISODate(yesterday);
+                  setFilterStartDate(dateStr);
+                  setFilterEndDate(dateStr);
+                }}
+                className="btn-secondary py-1.5 px-3 text-xs flex-1 bg-slate-900/50 hover:bg-slate-800 border-white/5"
+              >
+                Kemarin
+              </button>
+              <button
+                onClick={() => {
+                  const today = getLocalISODate();
+                  const lastWeek = new Date();
+                  lastWeek.setDate(lastWeek.getDate() - 7);
+                  setFilterStartDate(getLocalISODate(lastWeek));
+                  setFilterEndDate(today);
+                }}
+                className="btn-secondary py-1.5 px-3 text-xs flex-1 bg-slate-900/50 hover:bg-slate-800 border-white/5"
+              >
+                7 Hari
+              </button>
             </div>
 
             <button
@@ -810,21 +969,31 @@ export default function Records() {
                   />
                 </div>
 
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
                     Status Presensi
                   </label>
-                  <select
-                    value={overrideStatus}
-                    onChange={(e) => setOverrideStatus(e.target.value)}
-                    className="input-base [color-scheme:dark]"
-                    required
-                  >
-                    <option value="HADIR">HADIR (Hadir Manual)</option>
-                    <option value="SAKIT">SAKIT (Sakit)</option>
-                    <option value="IZIN">IZIN (Izin)</option>
-                    <option value="ALPHA">ALPHA (Alpha)</option>
-                  </select>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { id: 'HADIR', label: 'Hadir Manual', color: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' },
+                      { id: 'SAKIT', label: 'Sakit', color: 'bg-blue-500/10 text-blue-400 border-blue-500/30' },
+                      { id: 'IZIN', label: 'Izin', color: 'bg-purple-500/10 text-purple-400 border-purple-500/30' },
+                      { id: 'ALPHA', label: 'Alpha', color: 'bg-red-500/10 text-red-400 border-red-500/30' }
+                    ].map((status) => (
+                      <button
+                        key={status.id}
+                        type="button"
+                        onClick={() => setOverrideStatus(status.id)}
+                        className={`py-2 px-3 rounded-lg border text-sm font-semibold transition-all flex justify-center items-center ${
+                          overrideStatus === status.id 
+                            ? `${status.color} ring-1 ring-white/20 shadow-[0_0_10px_rgba(255,255,255,0.05)]` 
+                            : 'bg-slate-900/50 text-slate-500 border-white/5 hover:bg-slate-800 hover:text-slate-300'
+                        }`}
+                      >
+                        {status.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="space-y-1.5">
