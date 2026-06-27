@@ -562,6 +562,7 @@ export default function Records() {
           <button
             onClick={() => handleOpenOverrideModal()}
             className="btn-primary w-full sm:w-auto bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500"
+            title="Tambahkan data absensi mahasiswa secara manual jika kamera gagal mengenali wajah"
           >
             <Plus size={18} />
             Absen Manual
@@ -571,6 +572,7 @@ export default function Records() {
             onClick={() => void fetchRecords()}
             className="btn-secondary w-full sm:w-auto"
             disabled={isLoading}
+            title="Tarik data absensi terbaru dari server"
           >
             <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
             Refresh
@@ -579,8 +581,9 @@ export default function Records() {
           <div className="relative" ref={dropdownRef}>
             <button
               onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
-              className="btn-primary w-full sm:w-auto"
+              className="btn-primary w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 border-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.2)] text-emerald-50"
               disabled={!records.length || isExporting}
+              title="Unduh laporan presensi ke format Excel atau PDF"
             >
               <Download size={18} />
               {isExporting ? 'Mengekspor...' : 'Ekspor'}
@@ -623,7 +626,7 @@ export default function Records() {
             </AnimatePresence>
           </div>
 
-          <button onClick={handleLogout} className="btn-secondary w-full sm:w-auto">
+          <button onClick={handleLogout} className="btn-secondary w-full sm:w-auto" title="Keluar dari sesi Admin">
             <LogOut size={18} />
             Logout
           </button>
@@ -702,6 +705,7 @@ export default function Records() {
                   setFilterEndDate(today);
                 }}
                 className="btn-secondary py-1.5 px-3 text-xs flex-1 bg-slate-900/50 hover:bg-slate-800 border-white/5"
+                title="Tampilkan absensi hari ini saja"
               >
                 Hari Ini
               </button>
@@ -714,6 +718,7 @@ export default function Records() {
                   setFilterEndDate(dateStr);
                 }}
                 className="btn-secondary py-1.5 px-3 text-xs flex-1 bg-slate-900/50 hover:bg-slate-800 border-white/5"
+                title="Tampilkan absensi kemarin"
               >
                 Kemarin
               </button>
@@ -726,6 +731,7 @@ export default function Records() {
                   setFilterEndDate(today);
                 }}
                 className="btn-secondary py-1.5 px-3 text-xs flex-1 bg-slate-900/50 hover:bg-slate-800 border-white/5"
+                title="Tampilkan absensi 7 hari terakhir"
               >
                 7 Hari
               </button>
@@ -735,6 +741,7 @@ export default function Records() {
               onClick={handleResetFilters}
               className="btn-secondary w-full"
               disabled={!searchTerm && !filterStartDate && !filterEndDate}
+              title="Hapus semua filter pencarian dan tanggal"
             >
               Reset Filter
             </button>
@@ -762,7 +769,8 @@ export default function Records() {
             </div>
           ) : isLoading ? (
             <div className="panel-padding">
-              <div className="rounded-2xl border border-white/10 bg-slate-950/30 p-8 text-center">
+              <div className="rounded-2xl border border-white/10 bg-slate-950/30 p-8 text-center flex flex-col items-center justify-center">
+                <RefreshCw size={40} className="animate-spin mb-4 text-blue-400" />
                 <p className="text-lg font-semibold text-blue-300">Menyinkronkan dengan server...</p>
                 <p className="mt-2 text-sm leading-6 text-slate-400">
                   Mohon tunggu, data absensi sedang diambil dari backend.

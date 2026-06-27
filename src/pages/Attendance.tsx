@@ -321,6 +321,14 @@ export default function Attendance() {
 
               <div className="pointer-events-none absolute inset-4 rounded-[28px] border border-blue-400/25 sm:inset-6" />
 
+              {isCameraReady && status === 'idle' && (
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10 w-full text-center">
+                  <h2 className="text-xl sm:text-3xl font-black text-white/90 drop-shadow-[0_4px_8px_rgba(0,0,0,0.9)] tracking-widest animate-pulse px-4">
+                    HARAP HADAPKAN WAJAH KE KAMERA
+                  </h2>
+                </div>
+              )}
+
               {status === 'recognizing' && (
                 <>
                   <div className="absolute inset-x-0 top-0 z-20 h-1 animate-[scan_2s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-blue-500 to-transparent shadow-[0_0_15px_rgba(59,130,246,0.8)]" />
@@ -399,7 +407,7 @@ export default function Attendance() {
                     </div>
                     <div>
                       <p className="text-lg font-bold text-emerald-300">Berhasil Hadir</p>
-                      <p className="mt-1 text-sm leading-6 text-slate-300">{message}</p>
+                      <p className="mt-1 text-2xl sm:text-3xl font-extrabold text-emerald-100">{message}</p>
                     </div>
                   </motion.div>
                 )}
@@ -417,7 +425,7 @@ export default function Attendance() {
                     </div>
                     <div>
                       <p className="text-lg font-bold text-amber-300">Sudah Absen</p>
-                      <p className="mt-1 text-sm leading-6 text-slate-300">{message}</p>
+                      <p className="mt-1 text-2xl sm:text-3xl font-extrabold text-amber-100">{message}</p>
                     </div>
                   </motion.div>
                 )}
