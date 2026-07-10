@@ -3,3 +3,7 @@ dist/
 .env
 data/
 logs/
+
+# Logs & Archives
+*.log
+*.zip
