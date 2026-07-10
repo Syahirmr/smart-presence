@@ -1,3 +1,16 @@
+# Smart Presence
+
+Aplikasi absensi pintar menggunakan Face Recognition.
+
+## 🚀 Cara Menjalankan Aplikasi (Untuk Dosen Penguji)
+
+- **Langkah 1**: Ekstrak file `Smart-Presence.zip`.
+- **Langkah 2**: Buka terminal di dalam folder hasil ekstraksi, lalu jalankan perintah `npm install` di folder utama (jika ada script install-all) atau masuk ke folder `server` dan root masing-masing lalu jalankan `npm install` untuk mengunduh dependencies. *(Catatan: sesuai instruksi bisa gunakan perintah `npm run install-all` jika sudah dikonfigurasi)*.
+- **Langkah 3**: Setelah instalasi selesai, cukup klik ganda (Double Click) pada file `start-app.bat` (khusus pengguna Windows).
+- **Langkah 4**: Aplikasi Backend dan Frontend akan otomatis terbuka di terminal baru dan siap didemonstrasikan.
+
+---
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
