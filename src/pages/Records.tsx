@@ -915,7 +915,7 @@ export default function Records() {
             </>
           )}
         </section>
-      </section>
+      </div>
 
       {/* Manual Override Form Modal */}
       <AnimatePresence>
