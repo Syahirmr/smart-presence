@@ -2,10 +2,13 @@
 
 Aplikasi sistem presensi cerdas dan real-time berbasis AI (Face Recognition) yang dirancang untuk mengatasi antrean absensi mahasiswa dengan cepat dan akurat.
 
-## 👨💻 Pengembang
-- **Nama:** Syahir Mohamad Ramdhan
-- **Status:** Mengerjakan Individu (Solo Developer)
-- **Mata Kuliah:** Proyek Perangkat Lunak (PPL)
+## 👥 Tim Pengembang (PPL Kelas A/B/C/D)
+- **Raihan Alfarizi** (1237050001) - Backend / AI Developer
+- **Rifky Daffa Pratama** (1237050095) - Project Manager
+- **Sabrina** (1237050150) - Quality Assurance
+- **Salma Nur Oktavia** (1237050028) - Frontend Developer
+- **Salwa Sayyidati Azkia** (1237050005) - UI/UX Designer
+- **Syahir Mohamad Ramdhan** (1237050022) - Backend / DC Developer
 
 ## 🛠️ Tech Stack
 - **Frontend:** React, TypeScript, Vite, Tailwind CSS
