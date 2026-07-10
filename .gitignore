@@ -7,3 +7,7 @@ logs/
 # Logs & Archives
 *.log
 *.zip
+
+# Secret Kitchen & Prompts
+*.txt
+*prompt*
