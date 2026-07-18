@@ -24,56 +24,58 @@ async function runTests() {
 
   // Start the server in the background
   console.log(`Starting server on port ${TEST_PORT} using DB: ${TEST_DB}...`);
-  const serverProcess = spawn('npx', ['tsx', 'src/server.ts'], {
+  const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+  const serverProcess = spawn(npxCmd, ['tsx', 'src/server.ts'], {
     env: {
       ...process.env,
       PORT: String(TEST_PORT),
-      DB_PATH: TEST_DB,
-      JWT_SECRET: 'rahasia-negara-yang-panjang-banget',
-      DEFAULT_ADMIN_PASSWORD: 'admin123',
-    },
-    shell: true,
-  });
+    DB_PATH: TEST_DB,
+    JWT_SECRET: 'rahasia-negara-yang-panjang-banget',
+    DEFAULT_ADMIN_USERNAME: 'Admin!234',
+    DEFAULT_ADMIN_PASSWORD: 'admin123',
+  },
+  shell: true,
+});
 
-  serverProcess.stdout.on('data', (data) => {
-    // console.log(`[Server stdout] ${data}`);
-  });
+serverProcess.stdout.on('data', (data) => {
+  console.log(`[Server stdout] ${data}`);
+});
 
-  serverProcess.stderr.on('data', (data) => {
-    console.error(`[Server stderr] ${data}`);
-  });
+serverProcess.stderr.on('data', (data) => {
+  console.error(`[Server stderr] ${data}`);
+});
 
-  // Wait for server to bootstrap
-  await new Promise((resolve) => setTimeout(resolve, 3000));
+// Wait for server to bootstrap
+await new Promise((resolve) => setTimeout(resolve, 6000));
 
-  let testPassed = 0;
-  let testFailed = 0;
+let testPassed = 0;
+let testFailed = 0;
 
-  function assert(condition: boolean, message: string) {
-    if (condition) {
-      console.log(`✅ PASS: ${message}`);
-      testPassed++;
-    } else {
-      console.error(`❌ FAIL: ${message}`);
-      testFailed++;
-    }
+function assert(condition: boolean, message: string) {
+  if (condition) {
+    console.log(`✅ PASS: ${message}`);
+    testPassed++;
+  } else {
+    console.error(`❌ FAIL: ${message}`);
+    testFailed++;
   }
+}
 
-  try {
-    // 1. Health Check
-    console.log('\n--- 1. Testing Health Check ---');
-    const healthRes = await fetch(`${BASE_URL}/health`);
-    const healthJson = await healthRes.json();
-    assert(healthRes.status === 200, 'Health check responds with 200 OK');
-    assert(healthJson.success === true, 'Health check returns success true');
+try {
+  // 1. Health Check
+  console.log('\n--- 1. Testing Health Check ---');
+  const healthRes = await fetch(`${BASE_URL}/health`);
+  const healthJson = await healthRes.json();
+  assert(healthRes.status === 200, 'Health check responds with 200 OK');
+  assert(healthJson.success === true, 'Health check returns success true');
 
-    // 2. Admin Login
-    console.log('\n--- 2. Testing Admin Login ---');
-    const loginRes = await fetch(`${BASE_URL}/admin/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin123' }),
-    });
+  // 2. Admin Login
+  console.log('\n--- 2. Testing Admin Login ---');
+  const loginRes = await fetch(`${BASE_URL}/admin/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'Admin!234', password: 'admin123' }),
+  });
     const loginJson: any = await loginRes.json();
     assert(loginRes.status === 200, 'Admin login responds with 200 OK');
     assert(!!loginJson.data.token, 'Admin login returns a JWT token');

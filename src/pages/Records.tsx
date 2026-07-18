@@ -471,9 +471,8 @@ export default function Records() {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
                       transition={{ delay: Math.min(index * 0.03, 0.2) }}
-                      className={`rounded-2xl border border-white/10 bg-slate-950/35 p-4 transition-colors duration-1000 ${
-                        recentIds.includes(record.id) ? 'bg-emerald-500/10' : ''
-                      }`}
+                      className={`rounded-2xl border border-white/10 bg-slate-950/35 p-4 transition-colors duration-1000 ${recentIds.includes(record.id) ? 'bg-emerald-500/10' : ''
+                        }`}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
@@ -523,9 +522,8 @@ export default function Records() {
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, scale: 0.98 }}
                           transition={{ delay: Math.min(index * 0.02, 0.12) }}
-                          className={`hover:bg-white/[0.02] transition-colors duration-1000 ${
-                            recentIds.includes(record.id) ? 'bg-emerald-500/10' : ''
-                          }`}
+                          className={`hover:bg-white/[0.02] transition-colors duration-1000 ${recentIds.includes(record.id) ? 'bg-emerald-500/10' : ''
+                            }`}
                         >
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">

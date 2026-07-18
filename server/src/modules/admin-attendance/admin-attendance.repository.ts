@@ -18,6 +18,7 @@ let getAttendanceLogsByDateStmt: Database.Statement | null = null;
 let getAttendanceLogsByRangeStmt: Database.Statement | null = null;
 let getAttendanceLogsForExportByDateStmt: Database.Statement | null = null;
 let getAttendanceLogsForExportByRangeStmt: Database.Statement | null = null;
+let getAllAttendanceLogsForExportStmt: Database.Statement | null = null;
 
 export function initAdminAttendanceStatements() {
   if (
@@ -25,7 +26,8 @@ export function initAdminAttendanceStatements() {
     getAttendanceLogsByDateStmt &&
     getAttendanceLogsByRangeStmt &&
     getAttendanceLogsForExportByDateStmt &&
-    getAttendanceLogsForExportByRangeStmt
+    getAttendanceLogsForExportByRangeStmt &&
+    getAllAttendanceLogsForExportStmt
   ) {
     return;
   }
@@ -116,6 +118,22 @@ export function initAdminAttendanceStatements() {
     WHERE date(a.waktu_hadir) BETWEEN ? AND ?
     ORDER BY a.waktu_hadir DESC
   `);
+
+  getAllAttendanceLogsForExportStmt = db.prepare(`
+    SELECT
+      a.id,
+      a.user_id,
+      u.nim_nip,
+      u.nama_lengkap,
+      a.kiosk_id,
+      a.waktu_hadir,
+      a.confidence_score,
+      a.status,
+      a.created_at
+    FROM attendance_logs a
+    JOIN users u ON u.id = a.user_id
+    ORDER BY a.waktu_hadir DESC
+  `);
 }
 
 function assertAdminAttendanceStatementsReady() {
@@ -124,7 +142,8 @@ function assertAdminAttendanceStatementsReady() {
     !getAttendanceLogsByDateStmt ||
     !getAttendanceLogsByRangeStmt ||
     !getAttendanceLogsForExportByDateStmt ||
-    !getAttendanceLogsForExportByRangeStmt
+    !getAttendanceLogsForExportByRangeStmt ||
+    !getAllAttendanceLogsForExportStmt
   ) {
     throw new Error('Admin attendance statements are not initialized');
   }
@@ -160,4 +179,9 @@ export function getAttendanceLogsForExportByRange(
 ): AttendanceLogRow[] {
   assertAdminAttendanceStatementsReady();
   return getAttendanceLogsForExportByRangeStmt!.all(startDate, endDate) as AttendanceLogRow[];
+}
+
+export function getAllAttendanceLogsForExport(): AttendanceLogRow[] {
+  assertAdminAttendanceStatementsReady();
+  return getAllAttendanceLogsForExportStmt!.all() as AttendanceLogRow[];
 }

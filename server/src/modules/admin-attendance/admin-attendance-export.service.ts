@@ -1,6 +1,7 @@
 import {
   getAttendanceLogsForExportByDate,
   getAttendanceLogsForExportByRange,
+  getAllAttendanceLogsForExport,
 } from './admin-attendance.repository.js';
 import type { AdminAttendanceExportQuery } from './admin-attendance-export.schema.js';
 
@@ -15,9 +16,15 @@ function escapeCsvValue(value: string | number) {
 }
 
 export function exportAdminAttendanceCsv(query: AdminAttendanceExportQuery) {
-  const rows = query.date
-    ? getAttendanceLogsForExportByDate(query.date)
-    : getAttendanceLogsForExportByRange(query.start_date!, query.end_date!);
+  let rows;
+
+  if (query.date) {
+    rows = getAttendanceLogsForExportByDate(query.date);
+  } else if (query.start_date && query.end_date) {
+    rows = getAttendanceLogsForExportByRange(query.start_date, query.end_date);
+  } else {
+    rows = getAllAttendanceLogsForExport();
+  }
 
   const header = [
     'id',
@@ -51,7 +58,9 @@ export function exportAdminAttendanceCsv(query: AdminAttendanceExportQuery) {
 
   const filename = query.date
     ? `attendance-${query.date}.csv`
-    : `attendance-${query.start_date}-to-${query.end_date}.csv`;
+    : query.start_date && query.end_date
+      ? `attendance-${query.start_date}-to-${query.end_date}.csv`
+      : `attendance-all-${new Date().toISOString().split('T')[0]}.csv`;
 
   return {
     filename,

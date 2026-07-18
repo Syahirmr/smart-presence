@@ -3,3 +3,5 @@ dist/
 .env
 data/
 logs/
+docs/QA_Test_Plan_Smart_Presence.md
+server/reports/

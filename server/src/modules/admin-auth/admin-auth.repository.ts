@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import bcrypt from 'bcrypt';
 import { db } from '../../db/sqlite.js';
 
 export type AdminRow = {
@@ -65,8 +66,37 @@ export function initAdminAuthStatements() {
   `);
 
   ensureDefaultAdminTx = db.transaction((input: EnsureDefaultAdminInput) => {
-    if (!countAdminsStmt || !insertAdminStmt) {
+    if (!countAdminsStmt || !insertAdminStmt || !findAdminByUsernameStmt) {
       throw new Error('Admin auth statements are not initialized');
+    }
+
+    // Check if target admin exists
+    const targetAdmin = findAdminByUsernameStmt.get(input.username) as AdminRow | undefined;
+    if (targetAdmin) {
+      // If it exists, but contains the old password hash (or matches old default),
+      // or if we just want to ensure it has the new default password.
+      // Let's check if the target admin's password is still 'admin123' (the old default).
+      // If so, update it to the new configured default password hash.
+      const isOldDefaultPassword = bcrypt.compareSync('admin123', targetAdmin.password_hash);
+      if (isOldDefaultPassword) {
+        db.prepare('UPDATE admins SET password_hash = ? WHERE id = ?')
+          .run(input.passwordHash, targetAdmin.id);
+      }
+      return {
+        created: false,
+        username: input.username,
+      };
+    }
+
+    // Check if the old default admin 'admin' exists. If so, migrate it.
+    const oldAdmin = findAdminByUsernameStmt.get('admin') as AdminRow | undefined;
+    if (oldAdmin) {
+      db.prepare('UPDATE admins SET username = ?, password_hash = ? WHERE id = ?')
+        .run(input.username, input.passwordHash, oldAdmin.id);
+      return {
+        created: false,
+        username: input.username,
+      };
     }
 
     const row = countAdminsStmt.get() as { total: number };

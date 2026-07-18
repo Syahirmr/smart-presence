@@ -9,13 +9,6 @@ export const adminAttendanceExportQuerySchema = z
     end_date: dateStringSchema.optional(),
   })
   .refine(
-    (data) => Boolean(data.date) || Boolean(data.start_date) || Boolean(data.end_date),
-    {
-      message: 'Filter export wajib diisi',
-      path: ['date'],
-    },
-  )
-  .refine(
     (data) => !(data.date && (data.start_date || data.end_date)),
     {
       message: 'Parameter date tidak boleh digabung dengan start_date atau end_date',

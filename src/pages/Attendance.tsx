@@ -179,7 +179,7 @@ export default function Attendance() {
         let finalMessage = '';
 
         if (presentUsers.length > 0) {
-          const names = presentUsers.map(r => r.user?.nama_lengkap.split(' ')[0] || 'Pengguna').join(', ');
+          const names = presentUsers.map(r => r.user?.nama_lengkap || 'Pengguna').join(', ');
           setStatus('success');
           finalMessage = `Absensi sukses: ${names}`;
           
@@ -192,7 +192,7 @@ export default function Attendance() {
             }),
           });
         } else if (duplicateUsers.length > 0) {
-          const names = duplicateUsers.map(r => r.user?.nama_lengkap.split(' ')[0] || 'Pengguna').join(', ');
+          const names = duplicateUsers.map(r => r.user?.nama_lengkap || 'Pengguna').join(', ');
           setStatus('duplicate');
           
           // Konflik sudah digabung dan dibersihkan di sini:

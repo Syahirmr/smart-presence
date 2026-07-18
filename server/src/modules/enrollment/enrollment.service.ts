@@ -6,7 +6,7 @@ import {
 } from './enrollment.repository.js';
 import type { EnrollBody } from './enrollment.schema.js';
 
-const FACE_DUPLICATE_DISTANCE_THRESHOLD = 0.50;
+const FACE_DUPLICATE_DISTANCE_THRESHOLD = 0.30;
 
 function euclideanDistance(vecA: number[], vecB: number[]): number {
   if (vecA.length !== vecB.length) {

@@ -23,7 +23,7 @@ async function bootstrap() {
     initAdminAttendanceStatements();
 
     const seededAdmin = await seedDefaultAdmin({
-      username: 'admin',
+      username: env.DEFAULT_ADMIN_USERNAME,
       password: env.DEFAULT_ADMIN_PASSWORD,
     });
 
